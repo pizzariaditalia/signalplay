@@ -29,63 +29,33 @@ let prateleiraObserver = null;
 function iniciarRelogio() { function atualizar() { const agora = new Date(); const horas = String(agora.getHours()).padStart(2, '0'); const minutos = String(agora.getMinutes()).padStart(2, '0'); const relogio = document.getElementById('relogio-header'); if(relogio) relogio.innerText = `${horas}:${minutos}`; } atualizar(); setInterval(atualizar, 60000); }
 
 // ============================================================================
-// 💾 MOTOR DE BANCO DE DADOS LOCAL (IndexedDB) - CARREGAMENTO EM 1 SEGUNDO
+// 💾 MOTOR DE BANCO DE DADOS LOCAL (IndexedDB)
 // ============================================================================
-const dbName = "SignalPlayDB";
-const storeName = "catalogo";
+const dbName = "SignalPlayDB"; const storeName = "catalogo";
+function initDB() { return new Promise((resolve, reject) => { const request = indexedDB.open(dbName, 1); request.onerror = () => reject(); request.onupgradeneeded = (event) => { const dbObj = event.target.result; if (!dbObj.objectStoreNames.contains(storeName)) { dbObj.createObjectStore(storeName); } }; request.onsuccess = (event) => resolve(event.target.result); }); }
+async function saveToDB(lista) { try { const dbObj = await initDB(); return new Promise((resolve, reject) => { const transaction = dbObj.transaction([storeName], "readwrite"); const store = transaction.objectStore(storeName); store.put(lista, "lista_completa"); transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(); }); } catch (e) { console.log("Erro ao salvar no IndexedDB", e); } }
+async function loadFromDB() { try { const dbObj = await initDB(); return new Promise((resolve, reject) => { const transaction = dbObj.transaction([storeName], "readonly"); const store = transaction.objectStore(storeName); const request = store.get("lista_completa"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(); }); } catch (e) { return null; } }
+async function clearDB() { try { const dbObj = await initDB(); return new Promise((resolve) => { const transaction = dbObj.transaction([storeName], "readwrite"); const store = transaction.objectStore(storeName); store.clear(); transaction.oncomplete = () => resolve(); }); } catch(e) {} }
 
-function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(dbName, 1);
-        request.onerror = () => reject();
-        request.onupgradeneeded = (event) => {
-            const dbObj = event.target.result;
-            if (!dbObj.objectStoreNames.contains(storeName)) {
-                dbObj.createObjectStore(storeName); 
-            }
-        };
-        request.onsuccess = (event) => resolve(event.target.result);
-    });
+// ============================================================================
+// 🌐 MOTOR DE FETCH BLINDADO (PROXY ROTATOR)
+// ============================================================================
+async function fetchSeguro(url) {
+    // Tenta direto primeiro
+    try { let res = await fetch(url); if (res.ok) return await res.text(); } catch (e) {}
+    
+    // Se falhar, rotaciona os proxies
+    const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://thingproxy.freeboard.io/fetch/${url}`
+    ];
+    
+    for (let proxy of proxies) {
+        try { let res = await fetch(proxy); if (res.ok) return await res.text(); } catch (e) { console.log("Proxy falhou, tentando outro..."); }
+    }
+    throw new Error("Conexão bloqueada. Verifique se o link da lista está correto.");
 }
-
-async function saveToDB(lista) {
-    try {
-        const dbObj = await initDB();
-        return new Promise((resolve, reject) => {
-            const transaction = dbObj.transaction([storeName], "readwrite");
-            const store = transaction.objectStore(storeName);
-            store.put(lista, "lista_completa"); // Salva a lista gigante de uma vez só!
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject();
-        });
-    } catch (e) { console.log("Erro ao salvar no IndexedDB", e); }
-}
-
-async function loadFromDB() {
-    try {
-        const dbObj = await initDB();
-        return new Promise((resolve, reject) => {
-            const transaction = dbObj.transaction([storeName], "readonly");
-            const store = transaction.objectStore(storeName);
-            const request = store.get("lista_completa");
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject();
-        });
-    } catch (e) { return null; }
-}
-
-async function clearDB() {
-    try {
-        const dbObj = await initDB();
-        return new Promise((resolve) => {
-            const transaction = dbObj.transaction([storeName], "readwrite");
-            const store = transaction.objectStore(storeName);
-            store.clear();
-            transaction.oncomplete = () => resolve();
-        });
-    } catch(e) {}
-}
-
 
 // ============================================================================
 // 🎮 INICIALIZAÇÃO NATIVA E NAVEGAÇÃO DE TV
@@ -94,11 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     carregarAvatarGlobal(); verificarCredenciaisSalvas(); configurarMonitoramentoPlayerPC(); configurarMotorDeGestos(); configurarObserverPrateleiras(); iniciarRelogio(); 
     const avatar = document.querySelector('.user-avatar'); if(avatar) avatar.addEventListener('click', abrirPerfil);
     
-    if (typeof SpatialNavigation !== 'undefined') {
-        SpatialNavigation.init();
-        SpatialNavigation.add({ selector: 'button, input, select, .nav-item, .card-h, .card-grid, .card-top10, .quick-nav-item, .card-episodio, .ajuste-btn-cinema, .btn-control' });
-        SpatialNavigation.makeFocusable(); SpatialNavigation.focus();
-    }
+    if (typeof SpatialNavigation !== 'undefined') { SpatialNavigation.init(); SpatialNavigation.add({ selector: 'button, input, select, .nav-item, .card-h, .card-grid, .card-top10, .quick-nav-item, .card-episodio, .ajuste-btn-cinema, .btn-control' }); SpatialNavigation.makeFocusable(); SpatialNavigation.focus(); }
 });
 
 function reativarFocoTV() { if (typeof SpatialNavigation !== 'undefined') { SpatialNavigation.makeFocusable(); } }
@@ -112,16 +78,8 @@ function abrirPerfil() { const nomeCliente = localStorage.getItem('iptv_client_n
 function abrirConfiguracoes() { const bloqueioAtivo = localStorage.getItem('iptv_parental') === 'true'; document.getElementById('toggle-adulto').checked = bloqueioAtivo; document.getElementById('modal-configs').classList.remove('escondido'); setTimeout(() => document.getElementById('modal-configs').classList.add('open'), 50); reativarFocoTV(); }
 function fecharModais() { document.querySelectorAll('.modal-overlay').forEach(m => { m.classList.remove('open'); setTimeout(() => m.classList.add('escondido'), 300); }); if (typeof SpatialNavigation !== 'undefined') SpatialNavigation.focus(); }
 function limparHistorico(tipo) { if(tipo === 'continuar') { if(confirm("Deseja apagar a lista de Continuar Assistindo?")) { localStorage.removeItem('iptv_continuar_vod'); alert("Histórico limpo!"); fecharModais(); renderizarDashboardHome(); } } else if (tipo === 'favoritos') { if(confirm("Deseja remover todos os canais Favoritos?")) { localStorage.removeItem('iptv_favoritos_tv'); alert("Favoritos removidos!"); fecharModais(); renderizarDashboardHome(); } } }
-
-// Logout agora limpa também o banco de dados!
-async function sairDaConta() { 
-    if(confirm("Deseja desconectar sua conta?")) { 
-        await clearDB();
-        localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); localStorage.removeItem('iptv_avatar_base64'); window.location.reload(); 
-    } 
-}
+async function sairDaConta() { if(confirm("Deseja desconectar sua conta?")) { await clearDB(); localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); localStorage.removeItem('iptv_avatar_base64'); window.location.reload(); } }
 function alternarBarraBusca() { const c = document.getElementById('container-pesquisa'); c.classList.toggle('escondido'); if(!c.classList.contains('escondido')) { document.getElementById('input-busca').focus(); } else { document.getElementById('input-busca').value = ""; filtrarPesquisa(); } }
-
 
 // ============================================================================
 // 🔐 AUTENTICAÇÃO TRIPLA COM VERIFICAÇÃO DE CACHE (INDEXEDDB)
@@ -133,42 +91,23 @@ async function verificarCredenciaisSalvas() {
     const xtreamSalvo = localStorage.getItem('iptv_credentials');
     if (xtreamSalvo) { 
         const config = JSON.parse(xtreamSalvo); 
-        document.getElementById('tela-loading').classList.remove('escondido');
-        document.getElementById('loading-title').innerText = "Carregando Catálogo...";
-
-        // ⚡ O PULO DO GATO: Verifica se a lista gigante já está salva no IndexedDB!
+        document.getElementById('tela-loading').classList.remove('escondido'); document.getElementById('loading-title').innerText = "Carregando Catálogo...";
         let dadosLocais = await loadFromDB();
         
         if (dadosLocais && dadosLocais.length > 0) {
-            // Se já tem, carrega instantaneamente!
-            listaCanaisAtiva = dadosLocais;
-            document.getElementById('tela-loading').classList.add('escondido');
-            mudarAbaPrincipal("home");
+            listaCanaisAtiva = dadosLocais; document.getElementById('tela-loading').classList.add('escondido'); mudarAbaPrincipal("home");
         } else {
-            // Se não tem (primeiro acesso ou DB foi apagado), faz o download lento.
             if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); } 
             else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); }
             else { iniciarDownloadDaListaJSON(config); }
         }
-    } else { 
-        document.getElementById('tela-login-app').classList.remove('escondido'); 
-        setTimeout(() => document.getElementById('tela-login-app').style.opacity = '1', 50); 
-    }
+    } else { document.getElementById('tela-login-app').classList.remove('escondido'); setTimeout(() => document.getElementById('tela-login-app').style.opacity = '1', 50); }
 }
 
 async function forcarSincronizacao() {
-    fecharModais();
-    const xtreamSalvo = localStorage.getItem('iptv_credentials');
-    if (!xtreamSalvo) return;
-    const config = JSON.parse(xtreamSalvo);
-    
-    // Apaga a lista velha e forca baixar tudo de novo
-    await clearDB();
-    listaCanaisAtiva = [];
-    
-    if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); }
-    else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); }
-    else { iniciarDownloadDaListaJSON(config); }
+    fecharModais(); const xtreamSalvo = localStorage.getItem('iptv_credentials'); if (!xtreamSalvo) return;
+    const config = JSON.parse(xtreamSalvo); await clearDB(); listaCanaisAtiva = [];
+    if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); } else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); } else { iniciarDownloadDaListaJSON(config); }
 }
 
 async function salvarLinkDireto() {
@@ -193,32 +132,25 @@ async function salvarLinkDireto() {
         let tipoServer = sData.tipo || 'xtream';
 
         if (tipoServer === 'embutido') {
-            const config = { tipo: 'embutido', url: 'local' };
-            localStorage.setItem('iptv_credentials', JSON.stringify(config));
-            localStorage.setItem('iptv_user_info', JSON.stringify({status: "Local", auth: 1, max_connections: "Ilimitado"}));
-            localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
-            document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal();
-            iniciarDownloadEmbutido();
+            const config = { tipo: 'embutido', url: 'local' }; localStorage.setItem('iptv_credentials', JSON.stringify(config)); localStorage.setItem('iptv_user_info', JSON.stringify({status: "Local", auth: 1, max_connections: "Ilimitado"})); localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
+            document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal(); iniciarDownloadEmbutido();
         } else if (tipoServer === 'm3u') {
-            const config = { tipo: 'm3u', url: sData.url };
-            localStorage.setItem('iptv_credentials', JSON.stringify(config));
-            localStorage.setItem('iptv_user_info', JSON.stringify({status: "M3U", auth: 1, max_connections: "Ilimitado"}));
-            localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
-            document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal();
-            iniciarDownloadM3U(sData.url);
+            const config = { tipo: 'm3u', url: sData.url }; localStorage.setItem('iptv_credentials', JSON.stringify(config)); localStorage.setItem('iptv_user_info', JSON.stringify({status: "M3U", auth: 1, max_connections: "Ilimitado"})); localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
+            document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal(); iniciarDownloadM3U(sData.url);
         } else {
             let urlServidor = sData.url; let masterUser = sData.xtream_user; let masterPass = sData.xtream_pass;
             const cleanUrl = urlServidor.endsWith('/') ? urlServidor.slice(0, -1) : urlServidor;
             document.getElementById('loading-title').innerText = "Conectando ao Provedor...";
-            let authData = null;
-            try { let authRes = await fetch(`${cleanUrl}/player_api.php?username=${masterUser}&password=${masterPass}`); authData = await authRes.json(); } 
-            catch(e) { let pUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`${cleanUrl}/player_api.php?username=${masterUser}&password=${masterPass}`)}`; let authRes = await fetch(pUrl); authData = await authRes.json(); }
-
-            if (!authData || !authData.user_info || authData.user_info.auth === 0) throw new Error("O Servidor IPTV recusou a conexão da lista mestra.");
-            const config = { tipo: 'xtream', url: cleanUrl, user: masterUser, pass: masterPass };
-            localStorage.setItem('iptv_credentials', JSON.stringify(config)); localStorage.setItem('iptv_user_info', JSON.stringify(authData.user_info)); localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
-
-            document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal(); iniciarDownloadDaListaJSON(config);
+            
+            try { 
+                let txt = await fetchSeguro(`${cleanUrl}/player_api.php?username=${masterUser}&password=${masterPass}`); 
+                let authData = JSON.parse(txt);
+                if (!authData || !authData.user_info || authData.user_info.auth === 0) throw new Error("O Servidor IPTV recusou a conexão.");
+                
+                const config = { tipo: 'xtream', url: cleanUrl, user: masterUser, pass: masterPass };
+                localStorage.setItem('iptv_credentials', JSON.stringify(config)); localStorage.setItem('iptv_user_info', JSON.stringify(authData.user_info)); localStorage.setItem('iptv_client_name', dadosFirebase.usuario);
+                document.getElementById('tela-login-app').classList.add('escondido'); carregarAvatarGlobal(); iniciarDownloadDaListaJSON(config);
+            } catch(e) { throw new Error("O servidor de canais não está respondendo."); }
         }
 
     } catch (error) { document.getElementById('tela-loading').classList.add('escondido'); document.getElementById('tela-login-app').classList.remove('escondido'); document.getElementById('tela-login-app').style.opacity = '1'; mostrarErroLogin(error.message); }
@@ -228,41 +160,22 @@ async function salvarLinkDireto() {
 // 📥 MOTORES DE DOWNLOAD E ARMAZENAMENTO AUTOMÁTICO
 // ============================================================================
 async function iniciarDownloadEmbutido() {
-    document.getElementById('loading-title').innerText = "Carregando Servidor VIP...";
-    document.getElementById('tela-loading').classList.remove('escondido');
-    setTimeout(async () => {
-        listaCanaisAtiva = [...LISTA_LOCAL_APP]; 
-        await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
-        document.getElementById('tela-loading').classList.add('escondido');
-        mudarAbaPrincipal("home");
-    }, 1000);
+    document.getElementById('loading-title').innerText = "Carregando Servidor VIP..."; document.getElementById('tela-loading').classList.remove('escondido');
+    setTimeout(async () => { listaCanaisAtiva = [...LISTA_LOCAL_APP]; await saveToDB(listaCanaisAtiva); document.getElementById('tela-loading').classList.add('escondido'); mudarAbaPrincipal("home"); }, 1000);
 }
 
 async function iniciarDownloadM3U(url) {
-    document.getElementById('loading-title').innerText = "Baixando Lista M3U...";
-    document.getElementById('tela-loading').classList.remove('escondido');
+    document.getElementById('loading-title').innerText = "Baixando Lista M3U..."; document.getElementById('tela-loading').classList.remove('escondido');
     try {
-        let res = await fetch(url);
-        if(!res.ok) throw new Error("Falha direta");
-        let m3uText = await res.text();
+        let m3uText = await fetchSeguro(url);
         await processarTextoM3UParaCatalogo(m3uText);
-    } catch(e) {
-        try {
-            let pUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-            let resP = await fetch(pUrl);
-            let m3uText = await resP.text();
-            await processarTextoM3UParaCatalogo(m3uText);
-        } catch(err) {
-            document.getElementById('tela-loading').classList.add('escondido');
-            localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info');
-            document.getElementById('tela-login-app').classList.remove('escondido'); document.getElementById('tela-login-app').style.opacity = '1';
-            mostrarErroLogin("A lista M3U está offline ou link é inválido.");
-        }
+    } catch(err) {
+        document.getElementById('tela-loading').classList.add('escondido'); localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); document.getElementById('tela-login-app').classList.remove('escondido'); document.getElementById('tela-login-app').style.opacity = '1'; mostrarErroLogin(err.message);
     }
 }
 
 async function processarTextoM3UParaCatalogo(m3uText) {
-    if(!m3uText.includes('#EXTINF')) throw new Error("Formato de lista inválido.");
+    if(!m3uText.includes('#EXTINF')) throw new Error("O link fornecido não é uma lista M3U válida.");
     const lines = m3uText.split('\n'); let canaisParseados = []; let infoAtual = null; let cId = 1;
     for (let i = 0; i < lines.length; i++) {
         let linha = lines[i].trim();
@@ -280,14 +193,11 @@ async function processarTextoM3UParaCatalogo(m3uText) {
             infoAtual.tipo = tipoDetectado; canaisParseados.push(infoAtual); infoAtual = null; 
         }
     }
-    listaCanaisAtiva = canaisParseados; 
-    await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
-    document.getElementById('tela-loading').classList.add('escondido'); 
-    mudarAbaPrincipal("home");
+    listaCanaisAtiva = canaisParseados; await saveToDB(listaCanaisAtiva); document.getElementById('tela-loading').classList.add('escondido'); mudarAbaPrincipal("home");
 }
 
 async function iniciarDownloadDaListaJSON(config) {
-    async function buscarDadosDaAPI(action) { const url = `${config.url}/player_api.php?username=${config.user}&password=${config.pass}&action=${action}`; try { let res = await fetch(url); if (res.ok) { let txt = await res.text(); let clean = txt.trim(); if (clean.startsWith('[') || clean.startsWith('{')) return JSON.parse(clean); } } catch(e) {} try { let pUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`; let resP = await fetch(pUrl); if (resP.ok) { let txt = await resP.text(); let cleanP = txt.trim(); if (cleanP.startsWith('[') || cleanP.startsWith('{')) return JSON.parse(cleanP); } } catch(e) {} return []; }
+    async function buscarDadosDaAPI(action) { const url = `${config.url}/player_api.php?username=${config.user}&password=${config.pass}&action=${action}`; try { let txt = await fetchSeguro(url); let clean = txt.trim(); if (clean.startsWith('[') || clean.startsWith('{')) return JSON.parse(clean); } catch(e) {} return []; }
     try {
         let canaisAcumulados = []; document.getElementById('tela-loading').classList.remove('escondido');
         document.getElementById('loading-title').innerText = "Baixando Canais de TV..."; const dataLiveCat = await buscarDadosDaAPI("get_live_categories"); const dataLiveStream = await buscarDadosDaAPI("get_live_streams");
@@ -300,12 +210,7 @@ async function iniciarDownloadDaListaJSON(config) {
         if (Array.isArray(dataSeriesStream)) { let mS = {}; if (Array.isArray(dataSeriesCat)) dataSeriesCat.forEach(c => mS[String(c.category_id)] = c.category_name); dataSeriesStream.forEach(canal => { canaisAcumulados.push({ id: String(canal.series_id), nome: canal.name, logo: canal.cover || canal.stream_icon || "", categoria: mS[String(canal.category_id)] || "Outras Séries", tipo: "serie", rating: canal.rating || canal.rating_5based || 0, streamUrl: `${config.url}/player_api.php?username=${config.user}&password=${config.pass}&action=get_series_info&series_id=${canal.series_id}` }); }); }
 
         if (canaisAcumulados.length === 0) throw new Error("A lista de canais retornou vazia.");
-        listaCanaisAtiva = canaisAcumulados; 
-        
-        await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
-        
-        document.getElementById('tela-loading').classList.add('escondido'); 
-        mudarAbaPrincipal("home"); 
+        listaCanaisAtiva = canaisAcumulados; await saveToDB(listaCanaisAtiva); document.getElementById('tela-loading').classList.add('escondido'); mudarAbaPrincipal("home"); 
     } catch (error) { document.getElementById('tela-loading').classList.add('escondido'); localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); document.getElementById('tela-login-app').classList.remove('escondido'); document.getElementById('tela-login-app').style.opacity = '1'; mostrarErroLogin("Falha na sincronização: " + error.message); }
 }
 
@@ -321,8 +226,7 @@ function mudarAbaPrincipal(novaAba) {
     else if (novaAba === 'tv') { viewAtivaGlobal = "dashboard"; document.getElementById('view-tv').classList.remove('escondido'); renderizarDashboardMídia('tv'); }
     else if (novaAba === 'filme') { viewAtivaGlobal = "dashboard"; document.getElementById('view-filme').classList.remove('escondido'); renderizarDashboardMídia('filme'); }
     else if (novaAba === 'serie') { viewAtivaGlobal = "dashboard"; document.getElementById('view-serie').classList.remove('escondido'); renderizarDashboardMídia('serie'); }
-    document.getElementById('painel-conteudo-principal').scrollTop = 0;
-    reativarFocoTV();
+    document.getElementById('painel-conteudo-principal').scrollTop = 0; reativarFocoTV();
 }
 
 function configurarObserverPrateleiras() { prateleiraObserver = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) { const target = entry.target; const category = target.dataset.category; const tipo = target.dataset.tipo; if (!target.dataset.loaded) { popularPrateleiraHTML(target, category, tipo); target.dataset.loaded = "true"; } } }); }, { root: document.getElementById('painel-conteudo-principal'), rootMargin: '200px' }); }
@@ -366,8 +270,8 @@ async function abrirDetalhesMidia(id, tipo, streamUrl, nomeEncoded, logoEncoded)
         btnPlay.innerHTML = `<i class="fa-solid fa-play"></i> ASSISTIR AGORA`; btnPlay.onclick = () => roteadorMultiplataformaPlayer(streamUrl, nomeEncoded, id, tipo, idxFilme);
     } else {
         let action = tipo === 'filme' ? 'get_vod_info&vod_id=' : 'get_series_info&series_id='; let urlAPI = `${c.url}/player_api.php?username=${c.user}&password=${c.pass}&action=${action}${id}`; let dataInfo = null;
-        async function tentaFetch(url) { try { let res = await fetch(url); if(res.ok) { let txt = await res.text(); let idx1 = txt.indexOf('{'); let idx2 = txt.indexOf('['); let start = -1; if(idx1 !== -1 && idx2 !== -1) start = Math.min(idx1, idx2); else if(idx1 !== -1) start = idx1; else if(idx2 !== -1) start = idx2; if(start !== -1) return JSON.parse(txt.substring(start)); } } catch(e) {} return null; }
-        dataInfo = await tentaFetch(urlAPI); if(!dataInfo) dataInfo = await tentaFetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlAPI)}`);
+        async function tentaFetch(url) { try { let txt = await fetchSeguro(url); let idx1 = txt.indexOf('{'); let idx2 = txt.indexOf('['); let start = -1; if(idx1 !== -1 && idx2 !== -1) start = Math.min(idx1, idx2); else if(idx1 !== -1) start = idx1; else if(idx2 !== -1) start = idx2; if(start !== -1) return JSON.parse(txt.substring(start)); } catch(e) {} return null; }
+        dataInfo = await tentaFetch(urlAPI);
         document.getElementById('tela-loading').classList.add('escondido');
         if (dataInfo && dataInfo.info) { let i = dataInfo.info; if (i.name) document.getElementById('detalhes-titulo').innerText = i.name; if (i.description || i.plot) document.getElementById('detalhes-sinopse').innerText = i.description || i.plot; if (i.releasedate || i.releaseDate) document.getElementById('detalhes-ano').innerHTML = `<i class="fa-regular fa-calendar"></i> ${i.releasedate || i.releaseDate}`; if (i.rating) document.getElementById('detalhes-nota').innerHTML = `<i class="fa-solid fa-star"></i> ${i.rating}`; let bigImage = processarLogoSegura(i.backdrop_path && i.backdrop_path.length > 5 ? i.backdrop_path[0] : (i.movie_image || i.cover)); if (bigImage) { document.getElementById('detalhes-backdrop').style.backgroundImage = `url('${bigImage}')`; document.getElementById('detalhes-poster').innerHTML = `<img src="${bigImage}" style="width:100%;height:100%;object-fit:cover;">`; } }
         if (tipo === 'filme') { let btnPlay = document.getElementById('btn-play-filme'); btnPlay.classList.remove('escondido'); let idxFilme = listaDeReproducaoGlobal.findIndex(i => String(i.id) === String(id)); if (idxFilme === -1) { listaDeReproducaoGlobal = [{id: id, nome: nomeOriginal, logo: logoOriginal, tipo: tipo, streamUrl: streamUrl}]; idxFilme = 0; } let dHist = JSON.parse(localStorage.getItem('iptv_continuar_vod') || '[]'); let rHist = dHist.find(i => String(i.id) === String(id)); btnPlay.innerHTML = (rHist && rHist.tempo > 5) ? `<i class="fa-solid fa-play"></i> CONTINUAR ASSISTINDO` : `<i class="fa-solid fa-play"></i> ASSISTIR AGORA`; btnPlay.onclick = () => roteadorMultiplataformaPlayer(streamUrl, nomeEncoded, id, tipo, idxFilme); } else if (tipo === 'serie') { document.getElementById('area-series-episodios').classList.remove('escondido'); if (dataInfo && dataInfo.episodes) { cacheEpisodiosSerieAtiva = dataInfo.episodes; seriesIdAtivaGlobal = id; const sT = document.getElementById('select-temporadas'); sT.innerHTML = ""; let temps = Object.keys(dataInfo.episodes); temps.forEach(t => { sT.innerHTML += `<option value="${t}">Temporada ${t}</option>`; }); alternarTemporadaNativa(); } else { document.getElementById('lista-episodios-container').innerHTML = `<p style="color:var(--text-muted); padding:0 20px;">Sem episódios ativos.</p>`; } }
@@ -400,8 +304,8 @@ function mudarAspectoVideoCinema(m) { const v = document.getElementById('video-p
 async function buscarEPGDinamico(streamId) {
     epgAtivoGlobal = []; document.getElementById('btn-epg-player').style.opacity = '0.3'; const config = JSON.parse(localStorage.getItem('iptv_credentials') || '{}'); if(config.tipo !== 'xtream') return;
     let urlAPI = `${config.url}/player_api.php?username=${config.user}&password=${config.pass}&action=get_short_epg&stream_id=${streamId}&limit=15`; let dataEPG = null;
-    async function tentaFetch(url) { try { let res = await fetch(url); if(res.ok) { let txt = await res.text(); let idx1 = txt.indexOf('{'); let idx2 = txt.indexOf('['); let start = -1; if(idx1 !== -1 && idx2 !== -1) start = Math.min(idx1, idx2); else if(idx1 !== -1) start = idx1; else if(idx2 !== -1) start = idx2; if(start !== -1) return JSON.parse(txt.substring(start)); } } catch(e) {} return null; }
-    dataEPG = await tentaFetch(urlAPI); if(!dataEPG) dataEPG = await tentaFetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlAPI)}`);
+    async function tentaFetch(url) { try { let txt = await fetchSeguro(url); let idx1 = txt.indexOf('{'); let idx2 = txt.indexOf('['); let start = -1; if(idx1 !== -1 && idx2 !== -1) start = Math.min(idx1, idx2); else if(idx1 !== -1) start = idx1; else if(idx2 !== -1) start = idx2; if(start !== -1) return JSON.parse(txt.substring(start)); } catch(e) {} return null; }
+    dataEPG = await tentaFetch(urlAPI);
     if (dataEPG && dataEPG.epg_listings && dataEPG.epg_listings.length > 0) { epgAtivoGlobal = dataEPG.epg_listings; document.getElementById('btn-epg-player').style.opacity = '1'; let tituloAgora = safeDecodeBase64(epgAtivoGlobal[0].title); document.getElementById('player-cinema-title').innerHTML = `${nomeMidiaAtiva} <span style="font-size:0.85rem; color:var(--accent-yellow); margin-left:12px; font-weight:500;">• Agora: ${tituloAgora}</span>`; } else { let canalAtivo = listaCanaisAtiva.find(c => String(c.id) === String(streamId) && c.tipo === 'tv'); if (canalAtivo && canalAtivo.epg_title) { let tituloAgora = safeDecodeBase64(canalAtivo.epg_title); document.getElementById('player-cinema-title').innerHTML = `${nomeMidiaAtiva} <span style="font-size:0.85rem; color:var(--accent-yellow); margin-left:12px; font-weight:500;">• Agora: ${tituloAgora}</span>`; epgAtivoGlobal = [{ title: canalAtivo.epg_title, description: "", start: "", end: "" }]; document.getElementById('btn-epg-player').style.opacity = '1'; } else { document.getElementById('btn-epg-player').style.opacity = '0.3'; } }
 }
 function abrirEPG() { document.getElementById('epg-modal').classList.add('open'); document.getElementById('player-controls-wrap').classList.add('fade-out'); const lista = document.getElementById('lista-epg-modal'); lista.innerHTML = ""; if (!epgAtivoGlobal || epgAtivoGlobal.length === 0) { lista.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted); text-align:center; padding: 20px;"><i class="fa-solid fa-satellite-dish" style="font-size:3rem; margin-bottom:15px; opacity:0.5;"></i><h4 style="color:#fff; margin:0 0 5px 0;">Guia Indisponível</h4><p style="font-size:0.85rem; margin:0;">O servidor não forneceu a grade de programação para este canal.</p></div>`; return; } epgAtivoGlobal.forEach((prog, idx) => { let sT = "--:--", eT = "--:--"; if (prog.start && prog.start.includes(' ')) sT = prog.start.split(' ')[1].substring(0,5); else if (prog.start_timestamp) { let d = new Date(prog.start_timestamp * 1000); sT = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); } if (prog.end && prog.end.includes(' ')) eT = prog.end.split(' ')[1].substring(0,5); else if (prog.stop_timestamp) { let d = new Date(prog.stop_timestamp * 1000); eT = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); } let title = safeDecodeBase64(prog.title) || "Programa"; let desc = safeDecodeBase64(prog.description) || "Nenhuma informação adicional."; lista.innerHTML += `<div class="epg-item ${idx===0?"agora":""}"><div class="epg-time">${sT}<span>${eT}</span></div><div class="epg-info"><div class="epg-title">${title}</div><div class="epg-desc" title="${desc}">${desc}</div></div></div>`; }); reativarFocoTV(); }
