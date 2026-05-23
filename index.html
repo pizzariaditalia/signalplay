@@ -51,7 +51,7 @@
             <div class="nav-right">
                 <button class="nav-icon sn-focusable" onclick="abrirConfiguracoes()" title="Configurações" style="background:transparent; border:none; outline:none;"><i class="fa-solid fa-gear"></i></button>
                 <button class="user-avatar-btn sn-focusable" onclick="abrirPerfil()" style="background:transparent; border:none; outline:none; padding:0; border-radius:50%;"><img src="" class="user-avatar" id="header-avatar-img" alt="Usuário"></button>
-                <!--<div class="clock-display" id="relogio-header">--:--</div>-->
+                <div class="clock-display" id="relogio-header">--:--</div>
             </div>
         </header>
 
@@ -99,7 +99,8 @@
             <button class="btn-fechar-absoluto sn-focusable" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
             <h3 style="margin: 0 0 25px 0; color: #fff; font-size: 1.4rem; text-align: left;"><i class="fa-solid fa-gear"></i> Ajustes</h3>
             <div class="config-item"><div class="config-text"><h4>Controle Parental</h4><p>Ocultar conteúdo adulto (+18)</p></div><label class="toggle-switch"><input type="checkbox" id="toggle-adulto" class="sn-focusable" onchange="aplicarControleParental()"><span class="slider"></span></label></div><hr class="divisor-linha">
-            <button class="config-item clickable sn-focusable" onclick="limparHistorico('continuar')" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between;"><div class="config-text"><h4>Limpar Histórico</h4><p>Zerar "Continuar Assistindo"</p></div><i class="fa-solid fa-trash-can" style="color: var(--text-muted);"></i></button>
+            <button class="config-item clickable sn-focusable" onclick="forcarSincronizacao()" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between;"><div class="config-text"><h4>Sincronizar Catálogo</h4><p>Atualizar filmes e séries novos</p></div><i class="fa-solid fa-rotate" style="color: var(--accent-yellow);"></i></button>
+            <button class="config-item clickable sn-focusable" onclick="limparHistorico('continuar')" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between; margin-top:10px;"><div class="config-text"><h4>Limpar Histórico</h4><p>Zerar "Continuar Assistindo"</p></div><i class="fa-solid fa-trash-can" style="color: var(--text-muted);"></i></button>
             <button class="config-item clickable sn-focusable" onclick="limparHistorico('favoritos')" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between; margin-top:10px;"><div class="config-text"><h4>Zerar Favoritos</h4><p>Remover canais salvos</p></div><i class="fa-solid fa-star-half-stroke" style="color: var(--text-muted);"></i></button>
         </div>
     </div>
@@ -131,7 +132,7 @@
                 <div class="right-controls">
                     <div class="volume-container desktop-only" style="display: flex; align-items: center; gap: 8px; margin-right: 10px;">
                         <button class="btn-control sn-focusable" id="btn-mute-cinema" onclick="toggarMudoCinema()"><i class="fa-solid fa-volume-high"></i></button>
-                        <input type="range" id="volume-slider-cinema" min="0" max="1" step="0.05" value="1" oninput="mudarVolumeCinema(this.value)" style="width: 80px; accent-color: var(--accent-yellow);">
+                        <input type="range" id="volume-slider-cinema" min="0" max="1" step="0.05" value="1" oninput="mudarVolumeCinema(this.value)" class="sn-focusable" style="width: 80px; accent-color: var(--accent-yellow);">
                     </div>
                     <button class="btn-control mobile-only sn-focusable" onclick="dispararComoIntentNativa()" style="color: rgba(255,255,255,0.5);"><i class="fa-solid fa-up-right-from-square"></i></button>
                     <button class="btn-control mobile-only sn-focusable" onclick="toggarGiroDeTelaAPI()" style="color: var(--accent-yellow);"><i class="fa-solid fa-rotate"></i></button>
