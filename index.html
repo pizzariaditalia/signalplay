@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Signal Play</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/spatial-navigation-js@1.0.4/spatial_navigation.min.js"></script>
+</head>
+<body class="aba-home">
+
+    <div id="tela-login-app" class="tela-login-cinematica escondido">
+        <div class="login-glass-box">
+            <h1 class="login-logo">SIGNAL<span>PLAY</span></h1>
+            <h2 class="login-title">Entrar</h2>
+            <p class="login-subtitle">Acesse sua conta para continuar.</p>
+            <div id="login-mensagem-erro" class="escondido" style="color: #ff4757; font-size: 0.85rem; margin-bottom: 15px; font-weight: 600; background: rgba(255, 71, 87, 0.1); padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 71, 87, 0.3);"></div>
+
+            <div class="login-input-group"><input type="text" id="iptv-user-x" placeholder="Usuário" autocomplete="off" class="sn-focusable"></div>
+            <div class="login-input-group"><input type="password" id="iptv-pass-x" placeholder="Senha" autocomplete="off" class="sn-focusable"></div>
+            <button class="btn-login-entrar sn-focusable" onclick="salvarLinkDireto()">Entrar</button>
+            <p class="login-footer">Plataforma protegida e criptografada.</p>
+        </div>
+    </div>
+
+    <div id="tela-loading" class="loading-overlay escondido">
+        <div class="spinner"></div>
+        <div id="loading-title" style="font-weight:600; font-size:1rem; color:var(--accent-yellow); text-transform: uppercase;">Sincronizando...</div>
+    </div>
+
+    <main class="content-container" id="painel-conteudo-principal">
+        <header class="app-header-flutuante">
+            <div class="nav-left">
+                <button class="nav-icon-search sn-focusable" onclick="alternarBarraBusca()" style="background:transparent; border:none; outline:none;"><i class="fa-solid fa-search"></i></button>
+                <button class="nav-item active sn-focusable" id="tab-home" onclick="mudarAbaPrincipal('home')" style="background:transparent; border:none; outline:none;">Início</button>
+                <button class="nav-item sn-focusable" id="tab-tv" onclick="mudarAbaPrincipal('tv')" style="background:transparent; border:none; outline:none;">Canais</button>
+                <button class="nav-item sn-focusable" id="tab-filme" onclick="mudarAbaPrincipal('filme')" style="background:transparent; border:none; outline:none;">Filmes</button>
+                <button class="nav-item sn-focusable" id="tab-serie" onclick="mudarAbaPrincipal('serie')" style="background:transparent; border:none; outline:none;">Séries</button>
+            </div>
+            <div class="nav-right">
+                <button class="nav-icon sn-focusable" onclick="abrirConfiguracoes()" title="Configurações" style="background:transparent; border:none; outline:none;"><i class="fa-solid fa-gear"></i></button>
+                <button class="user-avatar-btn sn-focusable" onclick="abrirPerfil()" style="background:transparent; border:none; outline:none; padding:0; border-radius:50%;"><img src="" class="user-avatar" id="header-avatar-img" alt="Usuário"></button>
+                <!--<div class="clock-display" id="relogio-header">--:--</div>-->
+            </div>
+        </header>
+
+        <div id="container-pesquisa" class="busca-container escondido"><div style="display: flex; gap: 10px; align-items: center; padding: 10px;"><div class="busca-caixa" style="flex: 1;"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="input-busca" placeholder="Buscar no catálogo..." oninput="filtrarPesquisa()"></div><button onclick="alternarBarraBusca()" class="sn-focusable" style="background: transparent; border: none; color: var(--accent-yellow); font-family: 'Poppins'; font-weight: 700; cursor: pointer;">Cancelar</button></div></div>
+        
+        <div id="view-home" class="escondido"></div><div id="view-tv" class="escondido"></div><div id="view-filme" class="escondido"></div><div id="view-serie" class="escondido"></div>
+        
+        <div id="view-canais" class="view-canais-container escondido"><button class="btn-voltar-painel sn-focusable" id="btn-voltar-da-grade" onclick="voltarParaDashboard()"><i class="fa-solid fa-chevron-left"></i> Voltar</button><div class="grade-canais" id="grade-canais-tv"></div></div>
+        
+        <div id="view-detalhes" class="view-detalhes-container escondido">
+            <div class="detalhes-backdrop" id="detalhes-backdrop"></div>
+            <div class="detalhes-content">
+                <button class="btn-voltar-painel sn-focusable" onclick="voltarDeDetalhes()"><i class="fa-solid fa-chevron-left"></i> Voltar</button>
+                <div class="detalhes-header">
+                    <div id="detalhes-poster" class="detalhes-poster"></div>
+                    <div class="detalhes-info">
+                        <h2 id="detalhes-titulo" class="detalhes-titulo">Carregando...</h2>
+                        <div class="detalhes-meta"><span id="detalhes-ano"></span><span id="detalhes-nota"></span><span id="detalhes-tipo-badge" style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px;"></span></div>
+                        <p id="detalhes-sinopse" class="detalhes-sinopse"></p>
+                        <button id="btn-play-filme" class="btn-play-filme sn-focusable escondido"><i class="fa-solid fa-play"></i> ASSISTIR</button>
+                    </div>
+                </div>
+                <div id="area-series-episodios" class="escondido"><div class="selector-temporadas-caixa"><label for="select-temporadas" style="color: var(--accent-yellow); font-weight:700;">Temporadas:</label><select id="select-temporadas" onchange="alternarTemporadaNativa()" class="sn-focusable"></select></div><div class="lista-episodios" id="lista-episodios-container"></div></div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-perfil" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <button class="btn-fechar-absoluto sn-focusable" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
+            <div style="position: relative; display: inline-block; margin-bottom: 10px;">
+                <img src="" class="perfil-avatar-grande" id="perfil-avatar-img" alt="Usuário">
+                <button onclick="document.getElementById('input-avatar').click()" class="sn-focusable" style="position: absolute; bottom: 10px; right: 0; background: var(--accent-yellow); border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.8); transition: transform 0.2s;"><i class="fa-solid fa-camera" style="color: #000; font-size: 0.9rem;"></i></button>
+                <input type="file" id="input-avatar" accept="image/*" style="display: none;" onchange="trocarFotoPerfil(event)">
+            </div>
+            <h3 id="perfil-nome" style="margin: 5px 0 5px 0; color: #fff; font-size: 1.4rem;">Olá, Cliente!</h3>
+            <div id="perfil-status-badge" class="badge-status ativo">Conta Ativa</div>
+            <div class="perfil-info-box"><div class="info-row"><span class="info-label"><i class="fa-regular fa-calendar-xmark"></i> Vencimento:</span><span class="info-value" id="perfil-vencimento">--/--/----</span></div><div class="info-row"><span class="info-label"><i class="fa-solid fa-users"></i> Telas:</span><span class="info-value" id="perfil-telas">0 / 0</span></div></div>
+            <button class="btn-logout sn-focusable" onclick="sairDaConta()"><i class="fa-solid fa-arrow-right-from-bracket"></i> Desconectar</button>
+        </div>
+    </div>
+
+    <div id="modal-configs" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <button class="btn-fechar-absoluto sn-focusable" onclick="fecharModais()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin: 0 0 25px 0; color: #fff; font-size: 1.4rem; text-align: left;"><i class="fa-solid fa-gear"></i> Ajustes</h3>
+            <div class="config-item"><div class="config-text"><h4>Controle Parental</h4><p>Ocultar conteúdo adulto (+18)</p></div><label class="toggle-switch"><input type="checkbox" id="toggle-adulto" class="sn-focusable" onchange="aplicarControleParental()"><span class="slider"></span></label></div><hr class="divisor-linha">
+            <button class="config-item clickable sn-focusable" onclick="limparHistorico('continuar')" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between;"><div class="config-text"><h4>Limpar Histórico</h4><p>Zerar "Continuar Assistindo"</p></div><i class="fa-solid fa-trash-can" style="color: var(--text-muted);"></i></button>
+            <button class="config-item clickable sn-focusable" onclick="limparHistorico('favoritos')" style="width:100%; background:transparent; border:none; outline:none; display:flex; justify-content:space-between; margin-top:10px;"><div class="config-text"><h4>Zerar Favoritos</h4><p>Remover canais salvos</p></div><i class="fa-solid fa-star-half-stroke" style="color: var(--text-muted);"></i></button>
+        </div>
+    </div>
+
+    <div id="player-cinema-modal" class="player-cinema-modal escondido">
+        <div class="gesture-zone" id="gesture-zone"></div><div id="gesture-feedback" class="gesture-feedback">Próximo ⏭️</div>
+        <div class="video-container-cinema" id="video-container-cinema"><div id="player-buffer-overlay" class="player-buffer-overlay escondido"><div class="spinner-player"></div></div><video id="video-player-elemento" playsinline autoplay></video></div>
+        
+        <div id="quick-nav-modal" class="quick-nav-modal"><div class="quick-nav-header"><h3><i class="fa-solid fa-layer-group"></i> Playlist</h3><button class="btn-fechar-nav sn-focusable" onclick="fecharModalFosco()"><i class="fa-solid fa-chevron-down"></i></button></div><div class="quick-nav-category-switcher" id="quick-nav-category-switcher"><button class="btn-nav-cat sn-focusable" onclick="mudarCategoriaQuickNav(-1)"><i class="fa-solid fa-chevron-left"></i></button><div class="nav-cat-title" id="quick-nav-cat-name">Categoria</div><button class="btn-nav-cat sn-focusable" onclick="mudarCategoriaQuickNav(1)"><i class="fa-solid fa-chevron-right"></i></button></div><div class="quick-nav-list" id="quick-nav-list"></div></div>
+        <div id="epg-modal" class="quick-nav-modal"><div class="quick-nav-header"><h3><i class="fa-solid fa-calendar-days"></i> Guia de Programação</h3><button class="btn-fechar-nav sn-focusable" onclick="fecharModalFosco()"><i class="fa-solid fa-chevron-down"></i></button></div><div class="quick-nav-list" id="lista-epg-modal"></div></div>
+        
+        <div class="player-cinema-header player-bar-ui" id="player-header-wrap"><div class="player-cinema-title" id="player-cinema-title">Carregando...</div><button class="btn-fechar-cinema sn-focusable" onclick="fecharPlayerCinema()"><i class="fa-solid fa-xmark"></i> Fechar</button></div>
+        
+        <div class="player-controls-cinema player-bar-ui" id="player-controls-wrap">
+            <div class="timeline-box"><div class="progress-bar" id="timeline-container-cinema" onclick="navegarVideoTimelineCinema(event)"><div class="progress-filled" id="timeline-filled-cinema"></div></div><div class="time-display" id="player-time-text-cinema">00:00:00 / 00:00:00</div></div>
+            <div class="control-buttons-row">
+                <div class="left-controls">
+                    <button class="btn-control disabled sn-focusable" id="btn-player-anterior" onclick="reproduzirItemAnterior()"><i class="fa-solid fa-backward-step"></i></button>
+                    <button class="btn-control sn-focusable" id="btn-play-pause-cinema" onclick="toggarReproducaoCinema()"><i class="fa-solid fa-pause"></i></button>
+                    <button class="btn-control disabled sn-focusable" id="btn-player-proximo" onclick="reproduzirProximoItem()"><i class="fa-solid fa-forward-step"></i></button>
+                </div>
+                <div class="center-controls">
+                    <button class="btn-control escondido sn-focusable" id="btn-epg-player" onclick="abrirEPG()"><i class="fa-solid fa-calendar-days"></i></button>
+                    <button class="btn-control sn-focusable" onclick="abrirModalNavegacao()"><i class="fa-solid fa-list-ul"></i></button>
+                    <span style="color: rgba(255,255,255,0.2); margin: 0 5px;" id="sep-epg" class="desktop-only">|</span>
+                    <button class="ajuste-btn-cinema ativo sn-focusable desktop-only" id="btn-ratio-fit-cinema" onclick="mudarAspectoVideoCinema('fit')">Ajustar</button>
+                    <button class="ajuste-btn-cinema sn-focusable desktop-only" id="btn-ratio-stretch-cinema" onclick="mudarAspectoVideoCinema('stretch')">Esticar</button>
+                </div>
+                <div class="right-controls">
+                    <div class="volume-container desktop-only" style="display: flex; align-items: center; gap: 8px; margin-right: 10px;">
+                        <button class="btn-control sn-focusable" id="btn-mute-cinema" onclick="toggarMudoCinema()"><i class="fa-solid fa-volume-high"></i></button>
+                        <input type="range" id="volume-slider-cinema" min="0" max="1" step="0.05" value="1" oninput="mudarVolumeCinema(this.value)" style="width: 80px; accent-color: var(--accent-yellow);">
+                    </div>
+                    <button class="btn-control mobile-only sn-focusable" onclick="dispararComoIntentNativa()" style="color: rgba(255,255,255,0.5);"><i class="fa-solid fa-up-right-from-square"></i></button>
+                    <button class="btn-control mobile-only sn-focusable" onclick="toggarGiroDeTelaAPI()" style="color: var(--accent-yellow);"><i class="fa-solid fa-rotate"></i></button>
+                    <button class="btn-control sn-focusable" onclick="toggarTelaCheiaCinema()"><i class="fa-solid fa-expand"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/lista_local.js"></script>
+    <script src="js/apptv.js"></script>
+</body>
+</html>
