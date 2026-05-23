@@ -13,7 +13,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// ESTADOS GLOBAIS
+// ESTADOS GLOBAIS E VARIÁVEIS
 let listaCanaisAtiva = []; let abaAtivaGlobal = "home"; let viewAtivaGlobal = "home"; let categorySelectedGlobal = "";
 let cacheEpisodiosSerieAtiva = {}; let seriesIdAtivaGlobal = ""; let idMidiaAtiva = ""; let tipoMidiaAtiva = ""; let urlSintonizadaAtiva = ""; let nomeMidiaAtiva = "";
 let temProgressoAnterior = false; 
@@ -29,20 +29,75 @@ let prateleiraObserver = null;
 function iniciarRelogio() { function atualizar() { const agora = new Date(); const horas = String(agora.getHours()).padStart(2, '0'); const minutos = String(agora.getMinutes()).padStart(2, '0'); const relogio = document.getElementById('relogio-header'); if(relogio) relogio.innerText = `${horas}:${minutos}`; } atualizar(); setInterval(atualizar, 60000); }
 
 // ============================================================================
+// 💾 MOTOR DE BANCO DE DADOS LOCAL (IndexedDB) - CARREGAMENTO EM 1 SEGUNDO
+// ============================================================================
+const dbName = "SignalPlayDB";
+const storeName = "catalogo";
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1);
+        request.onerror = () => reject();
+        request.onupgradeneeded = (event) => {
+            const dbObj = event.target.result;
+            if (!dbObj.objectStoreNames.contains(storeName)) {
+                dbObj.createObjectStore(storeName); 
+            }
+        };
+        request.onsuccess = (event) => resolve(event.target.result);
+    });
+}
+
+async function saveToDB(lista) {
+    try {
+        const dbObj = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = dbObj.transaction([storeName], "readwrite");
+            const store = transaction.objectStore(storeName);
+            store.put(lista, "lista_completa"); // Salva a lista gigante de uma vez só!
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject();
+        });
+    } catch (e) { console.log("Erro ao salvar no IndexedDB", e); }
+}
+
+async function loadFromDB() {
+    try {
+        const dbObj = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = dbObj.transaction([storeName], "readonly");
+            const store = transaction.objectStore(storeName);
+            const request = store.get("lista_completa");
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject();
+        });
+    } catch (e) { return null; }
+}
+
+async function clearDB() {
+    try {
+        const dbObj = await initDB();
+        return new Promise((resolve) => {
+            const transaction = dbObj.transaction([storeName], "readwrite");
+            const store = transaction.objectStore(storeName);
+            store.clear();
+            transaction.oncomplete = () => resolve();
+        });
+    } catch(e) {}
+}
+
+
+// ============================================================================
 // 🎮 INICIALIZAÇÃO NATIVA E NAVEGAÇÃO DE TV
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => { 
     carregarAvatarGlobal(); verificarCredenciaisSalvas(); configurarMonitoramentoPlayerPC(); configurarMotorDeGestos(); configurarObserverPrateleiras(); iniciarRelogio(); 
     const avatar = document.querySelector('.user-avatar'); if(avatar) avatar.addEventListener('click', abrirPerfil);
     
-    // Inicia a biblioteca de Controle Remoto para TV
     if (typeof SpatialNavigation !== 'undefined') {
         SpatialNavigation.init();
-        SpatialNavigation.add({
-            selector: 'button, input, select, .nav-item, .card-h, .card-grid, .card-top10, .quick-nav-item, .card-episodio, .ajuste-btn-cinema, .btn-control'
-        });
-        SpatialNavigation.makeFocusable();
-        SpatialNavigation.focus();
+        SpatialNavigation.add({ selector: 'button, input, select, .nav-item, .card-h, .card-grid, .card-top10, .quick-nav-item, .card-episodio, .ajuste-btn-cinema, .btn-control' });
+        SpatialNavigation.makeFocusable(); SpatialNavigation.focus();
     }
 });
 
@@ -57,23 +112,63 @@ function abrirPerfil() { const nomeCliente = localStorage.getItem('iptv_client_n
 function abrirConfiguracoes() { const bloqueioAtivo = localStorage.getItem('iptv_parental') === 'true'; document.getElementById('toggle-adulto').checked = bloqueioAtivo; document.getElementById('modal-configs').classList.remove('escondido'); setTimeout(() => document.getElementById('modal-configs').classList.add('open'), 50); reativarFocoTV(); }
 function fecharModais() { document.querySelectorAll('.modal-overlay').forEach(m => { m.classList.remove('open'); setTimeout(() => m.classList.add('escondido'), 300); }); if (typeof SpatialNavigation !== 'undefined') SpatialNavigation.focus(); }
 function limparHistorico(tipo) { if(tipo === 'continuar') { if(confirm("Deseja apagar a lista de Continuar Assistindo?")) { localStorage.removeItem('iptv_continuar_vod'); alert("Histórico limpo!"); fecharModais(); renderizarDashboardHome(); } } else if (tipo === 'favoritos') { if(confirm("Deseja remover todos os canais Favoritos?")) { localStorage.removeItem('iptv_favoritos_tv'); alert("Favoritos removidos!"); fecharModais(); renderizarDashboardHome(); } } }
-function sairDaConta() { if(confirm("Deseja desconectar sua conta?")) { localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); localStorage.removeItem('iptv_avatar_base64'); window.location.reload(); } }
+
+// Logout agora limpa também o banco de dados!
+async function sairDaConta() { 
+    if(confirm("Deseja desconectar sua conta?")) { 
+        await clearDB();
+        localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); localStorage.removeItem('iptv_avatar_base64'); window.location.reload(); 
+    } 
+}
 function alternarBarraBusca() { const c = document.getElementById('container-pesquisa'); c.classList.toggle('escondido'); if(!c.classList.contains('escondido')) { document.getElementById('input-busca').focus(); } else { document.getElementById('input-busca').value = ""; filtrarPesquisa(); } }
 
+
 // ============================================================================
-// 🔐 AUTENTICAÇÃO TRIPLA (XTREAM, LOCAL, M3U WEB)
+// 🔐 AUTENTICAÇÃO TRIPLA COM VERIFICAÇÃO DE CACHE (INDEXEDDB)
 // ============================================================================
 function mostrarErroLogin(mensagem) { const boxErro = document.getElementById('login-mensagem-erro'); boxErro.innerText = mensagem; boxErro.classList.remove('escondido'); }
 function esconderErroLogin() { document.getElementById('login-mensagem-erro').classList.add('escondido'); }
 
-function verificarCredenciaisSalvas() {
+async function verificarCredenciaisSalvas() {
     const xtreamSalvo = localStorage.getItem('iptv_credentials');
     if (xtreamSalvo) { 
         const config = JSON.parse(xtreamSalvo); 
-        if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); } 
-        else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); }
-        else { iniciarDownloadDaListaJSON(config); }
-    } else { document.getElementById('tela-login-app').classList.remove('escondido'); setTimeout(() => document.getElementById('tela-login-app').style.opacity = '1', 50); }
+        document.getElementById('tela-loading').classList.remove('escondido');
+        document.getElementById('loading-title').innerText = "Carregando Catálogo...";
+
+        // ⚡ O PULO DO GATO: Verifica se a lista gigante já está salva no IndexedDB!
+        let dadosLocais = await loadFromDB();
+        
+        if (dadosLocais && dadosLocais.length > 0) {
+            // Se já tem, carrega instantaneamente!
+            listaCanaisAtiva = dadosLocais;
+            document.getElementById('tela-loading').classList.add('escondido');
+            mudarAbaPrincipal("home");
+        } else {
+            // Se não tem (primeiro acesso ou DB foi apagado), faz o download lento.
+            if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); } 
+            else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); }
+            else { iniciarDownloadDaListaJSON(config); }
+        }
+    } else { 
+        document.getElementById('tela-login-app').classList.remove('escondido'); 
+        setTimeout(() => document.getElementById('tela-login-app').style.opacity = '1', 50); 
+    }
+}
+
+async function forcarSincronizacao() {
+    fecharModais();
+    const xtreamSalvo = localStorage.getItem('iptv_credentials');
+    if (!xtreamSalvo) return;
+    const config = JSON.parse(xtreamSalvo);
+    
+    // Apaga a lista velha e forca baixar tudo de novo
+    await clearDB();
+    listaCanaisAtiva = [];
+    
+    if(config.tipo === 'embutido') { iniciarDownloadEmbutido(); }
+    else if(config.tipo === 'm3u') { iniciarDownloadM3U(config.url); }
+    else { iniciarDownloadDaListaJSON(config); }
 }
 
 async function salvarLinkDireto() {
@@ -130,13 +225,14 @@ async function salvarLinkDireto() {
 }
 
 // ============================================================================
-// 📥 MOTORES DE DOWNLOAD
+// 📥 MOTORES DE DOWNLOAD E ARMAZENAMENTO AUTOMÁTICO
 // ============================================================================
-function iniciarDownloadEmbutido() {
+async function iniciarDownloadEmbutido() {
     document.getElementById('loading-title').innerText = "Carregando Servidor VIP...";
     document.getElementById('tela-loading').classList.remove('escondido');
-    setTimeout(() => {
+    setTimeout(async () => {
         listaCanaisAtiva = [...LISTA_LOCAL_APP]; 
+        await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
         document.getElementById('tela-loading').classList.add('escondido');
         mudarAbaPrincipal("home");
     }, 1000);
@@ -149,13 +245,13 @@ async function iniciarDownloadM3U(url) {
         let res = await fetch(url);
         if(!res.ok) throw new Error("Falha direta");
         let m3uText = await res.text();
-        processarTextoM3UParaCatalogo(m3uText);
+        await processarTextoM3UParaCatalogo(m3uText);
     } catch(e) {
         try {
             let pUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
             let resP = await fetch(pUrl);
             let m3uText = await resP.text();
-            processarTextoM3UParaCatalogo(m3uText);
+            await processarTextoM3UParaCatalogo(m3uText);
         } catch(err) {
             document.getElementById('tela-loading').classList.add('escondido');
             localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info');
@@ -165,7 +261,7 @@ async function iniciarDownloadM3U(url) {
     }
 }
 
-function processarTextoM3UParaCatalogo(m3uText) {
+async function processarTextoM3UParaCatalogo(m3uText) {
     if(!m3uText.includes('#EXTINF')) throw new Error("Formato de lista inválido.");
     const lines = m3uText.split('\n'); let canaisParseados = []; let infoAtual = null; let cId = 1;
     for (let i = 0; i < lines.length; i++) {
@@ -185,6 +281,7 @@ function processarTextoM3UParaCatalogo(m3uText) {
         }
     }
     listaCanaisAtiva = canaisParseados; 
+    await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
     document.getElementById('tela-loading').classList.add('escondido'); 
     mudarAbaPrincipal("home");
 }
@@ -203,10 +300,18 @@ async function iniciarDownloadDaListaJSON(config) {
         if (Array.isArray(dataSeriesStream)) { let mS = {}; if (Array.isArray(dataSeriesCat)) dataSeriesCat.forEach(c => mS[String(c.category_id)] = c.category_name); dataSeriesStream.forEach(canal => { canaisAcumulados.push({ id: String(canal.series_id), nome: canal.name, logo: canal.cover || canal.stream_icon || "", categoria: mS[String(canal.category_id)] || "Outras Séries", tipo: "serie", rating: canal.rating || canal.rating_5based || 0, streamUrl: `${config.url}/player_api.php?username=${config.user}&password=${config.pass}&action=get_series_info&series_id=${canal.series_id}` }); }); }
 
         if (canaisAcumulados.length === 0) throw new Error("A lista de canais retornou vazia.");
-        listaCanaisAtiva = canaisAcumulados; document.getElementById('tela-loading').classList.add('escondido'); mudarAbaPrincipal("home"); 
+        listaCanaisAtiva = canaisAcumulados; 
+        
+        await saveToDB(listaCanaisAtiva); // ⚡ Salva no DB Local
+        
+        document.getElementById('tela-loading').classList.add('escondido'); 
+        mudarAbaPrincipal("home"); 
     } catch (error) { document.getElementById('tela-loading').classList.add('escondido'); localStorage.removeItem('iptv_credentials'); localStorage.removeItem('iptv_user_info'); localStorage.removeItem('iptv_client_name'); document.getElementById('tela-login-app').classList.remove('escondido'); document.getElementById('tela-login-app').style.opacity = '1'; mostrarErroLogin("Falha na sincronização: " + error.message); }
 }
 
+// ============================================================================
+// ⚡ NAVEGAÇÃO E SISTEMAS NATIVOS RESTANTES
+// ============================================================================
 function mudarAbaPrincipal(novaAba) { 
     abaAtivaGlobal = novaAba; document.body.className = 'aba-' + novaAba; 
     document.querySelectorAll('.app-header-flutuante .nav-item').forEach(i => i.classList.remove('active')); const alvo = document.getElementById(`tab-${novaAba}`); if(alvo) alvo.classList.add('active'); 
@@ -353,4 +458,3 @@ function formatarTempo(s) { if(isNaN(s) || !isFinite(s)) return "00:00:00"; let 
 function fecharPlayerCinema() { liberarRotacaoPortrait(); fecharModalFosco(); document.getElementById('player-cinema-modal').classList.remove('rotated-landscape'); document.getElementById('video-player-elemento').pause(); document.getElementById('video-player-elemento').src = ""; if(window.hlsP) { window.hlsP.destroy(); window.hlsP = null; } if (document.fullscreenElement || document.webkitFullscreenElement) { if(document.exitFullscreen) document.exitFullscreen().catch(e=>{}); else if(document.webkitExitFullscreen) document.webkitExitFullscreen().catch(e=>{}); } document.getElementById('player-cinema-modal').classList.add('escondido'); if(viewAtivaGlobal === "detalhes") { let btnPlay = document.getElementById('btn-play-filme'); let d = JSON.parse(localStorage.getItem('iptv_continuar_vod') || '[]'); let r = d.find(i => String(i.id) === String(idMidiaAtiva)); if (r && r.tempo > 5) { btnPlay.innerHTML = `<i class="fa-solid fa-play"></i> CONTINUAR ASSISTINDO`; } } else if (abaAtivaGlobal === "home") { renderizarDashboardHome(); } else { renderizarCanais(false); } }
 function dispararComoIntentNativa() { if(!urlSintonizadaAtiva) return; let intentUrl = urlSintonizadaAtiva; if(tipoMidiaAtiva === 'tv' && intentUrl.endsWith('.m3u8')) intentUrl = intentUrl.slice(0, -5) + '.ts'; const p = intentUrl.split('://'); if(p.length !== 2) return; document.getElementById('video-player-elemento').pause(); fecharPlayerCinema(); window.location.href = `intent://${p[1]}#Intent;action=android.intent.action.VIEW;scheme=${p[0]};type=video/*;S.title=${encodeURIComponent(nomeMidiaAtiva)};end;`; }
 function toggarTelaCheiaCinema() { const c = document.getElementById('player-cinema-modal'); if(!document.fullscreenElement && !document.webkitFullscreenElement) { if(c.requestFullscreen) c.requestFullscreen().catch(e=>{}); else if(c.webkitRequestFullscreen) c.webkitRequestFullscreen().catch(e=>{}); } else { if(document.exitFullscreen) document.exitFullscreen().catch(e=>{}); else if(document.webkitExitFullscreen) document.webkitExitFullscreen().catch(e=>{}); } }
-
