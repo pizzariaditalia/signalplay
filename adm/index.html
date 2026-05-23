@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Play | Painel Administrativo</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="logo">SIGNAL<span>PLAY</span></div>
+        <nav class="nav-menu">
+            <div class="nav-item active" id="nav-clientes" onclick="mudarAbaAdm('clientes')"><i class="fa-solid fa-users"></i> Clientes</div>
+            <div class="nav-item" id="nav-servidores" onclick="mudarAbaAdm('servidores')"><i class="fa-solid fa-server"></i> Servidores</div>
+            <div class="nav-item" id="nav-relatorios" onclick="mudarAbaAdm('relatorios')"><i class="fa-solid fa-chart-pie"></i> Relatórios</div>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        
+        <section id="sec-clientes" class="view-adm">
+            <header class="header">
+                <h2>Gestão de Clientes</h2>
+                <button class="btn-primario" onclick="abrirModalCliente()"><i class="fa-solid fa-plus"></i> Novo Cliente</button>
+            </header>
+            <div class="dashboard-container">
+                <div id="loading-clientes" class="loading-adm"><div class="spinner"></div>Carregando clientes...</div>
+                <div class="table-container escondido" id="tabela-clientes-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Senha</th>
+                                <th>Servidor</th>
+                                <th>Status</th>
+                                <th>Vencimento</th>
+                                <th style="text-align: right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lista-clientes-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-servidores" class="view-adm escondido">
+            <header class="header">
+                <h2>Servidores IPTV</h2>
+                <button class="btn-primario" onclick="abrirModalServidor()"><i class="fa-solid fa-plus"></i> Novo Servidor</button>
+            </header>
+            <div class="dashboard-container">
+                <div id="loading-servidores" class="loading-adm"><div class="spinner"></div>Carregando servidores...</div>
+                <div class="table-container escondido" id="tabela-servidores-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome do Servidor</th>
+                                <th>Tipo</th>
+                                <th>Conexão / Link</th>
+                                <th>Adicionado em</th>
+                                <th style="text-align: right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lista-servidores-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-relatorios" class="view-adm escondido">
+            <header class="header">
+                <h2>Dashboard e Inteligência</h2>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="color:var(--text-muted); font-size:0.85rem; font-weight:600;">Ticket Médio (R$):</span>
+                    <input type="number" id="ticket-medio" value="35" style="width: 80px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); color: var(--accent-yellow); font-weight: bold; outline: none; text-align: center;" onchange="gerarRelatorios()">
+                </div>
+            </header>
+            <div class="dashboard-container">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(255, 204, 0, 0.15); color: var(--accent-yellow);"><i class="fa-solid fa-users"></i></div>
+                        <div class="stat-info"><h4 id="stat-total">0</h4><p>Total de Clientes</p></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(46, 213, 115, 0.15); color: var(--success);"><i class="fa-solid fa-circle-check"></i></div>
+                        <div class="stat-info"><h4 id="stat-ativos">0</h4><p>Assinaturas Ativas</p></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(255, 71, 87, 0.15); color: var(--danger);"><i class="fa-solid fa-circle-xmark"></i></div>
+                        <div class="stat-info"><h4 id="stat-inativos">0</h4><p>Expirados / Inativos</p></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(52, 152, 219, 0.15); color: #3498db;"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                        <div class="stat-info"><h4 id="stat-testes">0</h4><p>Testes Ativos</p></div>
+                    </div>
+                    <div class="stat-card" style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; border-color: rgba(46, 213, 115, 0.3);">
+                        <div><p style="color: var(--text-muted); font-size: 0.9rem; font-weight: 600;">Receita Recorrente Mensal (MRR Estimado)</p><h2 id="stat-mrr" style="font-size: 2.2rem; color: var(--success); margin: 0;">R$ 0,00</h2></div>
+                        <i class="fa-solid fa-sack-dollar" style="font-size: 3rem; color: rgba(46, 213, 115, 0.2);"></i>
+                    </div>
+                </div>
+                <h3 style="margin: 30px 0 15px 0; font-size: 1.2rem; color: #fff;"><i class="fa-solid fa-triangle-exclamation" style="color: var(--danger);"></i> Vencendo nos próximos 5 dias</h3>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Usuário</th><th>Telefone / Contato</th><th>Data de Vencimento</th><th>Status</th></tr></thead>
+                        <tbody id="lista-retencao-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="modal-cliente" class="modal-overlay">
+        <div class="modal-content">
+            <button class="btn-fechar-modal" onclick="fecharModalCliente()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 class="modal-title" id="modal-titulo-cliente">Adicionar Cliente</h3>
+            <input type="hidden" id="cliente-id">
+            <div class="input-group">
+                <label>Nome de Usuário (Login)</label>
+                <input type="text" id="cliente-usuario" placeholder="Ex: joaosilva" autocomplete="off">
+            </div>
+            <div class="input-group">
+                <label>Senha de Acesso</label>
+                <input type="text" id="cliente-senha" placeholder="Sua senha forte" autocomplete="off">
+            </div>
+            <div class="input-group">
+                <label>Vincular ao Servidor</label>
+                <select id="cliente-servidor"></select>
+            </div>
+            <div style="display: flex; gap: 15px;">
+                <div class="input-group" style="flex: 1;">
+                    <label>Status</label>
+                    <select id="cliente-status">
+                        <option value="ativo">🟢 Ativo (Pago)</option>
+                        <option value="teste">🔵 Teste (Trial)</option>
+                        <option value="inativo">🔴 Inativo (Bloqueado)</option>
+                    </select>
+                </div>
+                <div class="input-group" style="flex: 1;">
+                    <label>Data de Vencimento</label>
+                    <input type="date" id="cliente-vencimento" style="color-scheme: dark;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancelar" onclick="fecharModalCliente()">Cancelar</button>
+                <button class="btn-salvar" onclick="salvarCliente()"><i class="fa-solid fa-check"></i> Salvar Cliente</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-servidor" class="modal-overlay">
+        <div class="modal-content">
+            <button class="btn-fechar-modal" onclick="fecharModalServidor()"><i class="fa-solid fa-xmark"></i></button>
+            <h3 class="modal-title" id="modal-titulo-servidor">Adicionar Servidor</h3>
+            <input type="hidden" id="servidor-id">
+
+            <div class="input-group">
+                <label>Tipo de Conexão</label>
+                <select id="servidor-tipo" onchange="alternarCamposServidor()">
+                    <option value="xtream">API Xtream Codes (Provedor)</option>
+                    <option value="m3u">Lista Web (Link M3U / M3U8)</option>
+                    <option value="embutido">Lista Embutida (Interna no App)</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label>Nome de Identificação</label>
+                <input type="text" id="servidor-nome" placeholder="Ex: Master BR 01" autocomplete="off">
+            </div>
+            
+            <div class="input-group" id="box-servidor-url">
+                <label id="label-servidor-url">Host / URL Base</label>
+                <input type="text" id="servidor-url" placeholder="Ex: http://meudominio.com:80" autocomplete="off">
+            </div>
+
+            <div id="box-xtream-creds">
+                <div class="input-group">
+                    <label>Usuário da Lista Mestre</label>
+                    <input type="text" id="servidor-xtream-user" placeholder="Usuário" autocomplete="off">
+                </div>
+                <div class="input-group">
+                    <label>Senha da Lista Mestre</label>
+                    <input type="text" id="servidor-xtream-pass" placeholder="Senha" autocomplete="off">
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-cancelar" onclick="fecharModalServidor()">Cancelar</button>
+                <button class="btn-salvar" id="btn-salvar-servidor" onclick="salvarServidor()"><i class="fa-solid fa-check"></i> Salvar Servidor</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
+
