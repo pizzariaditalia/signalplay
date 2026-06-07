@@ -119,28 +119,33 @@
     </main>
 
     <div id="modal-cliente" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
             <button class="btn-fechar-modal" onclick="fecharModalCliente()"><i class="fa-solid fa-xmark"></i></button>
             <h3 class="modal-title" id="modal-titulo-cliente">Adicionar Cliente</h3>
             <input type="hidden" id="cliente-id">
+            
             <div class="input-group">
-                <label>Nome de Usuário (Login)</label>
-                <input type="text" id="cliente-usuario" placeholder="Ex: joaosilva" autocomplete="off">
+                <label>Nome de Usuário (E-mail ou Login)</label>
+                <input type="text" id="cliente-usuario" placeholder="Ex: joaosilva@gmail.com" autocomplete="off">
             </div>
+            
             <div class="input-group">
                 <label>Senha de Acesso</label>
-                <input type="text" id="cliente-senha" placeholder="Sua senha forte" autocomplete="off">
+                <input type="text" id="cliente-senha" placeholder="Senha do cliente" autocomplete="off">
             </div>
+            
             <div class="input-group">
                 <label>Vincular ao Servidor</label>
                 <select id="cliente-servidor"></select>
             </div>
+            
             <div style="display: flex; gap: 15px;">
                 <div class="input-group" style="flex: 1;">
                     <label>Status</label>
                     <select id="cliente-status">
                         <option value="ativo">🟢 Ativo (Pago)</option>
                         <option value="teste">🔵 Teste (Trial)</option>
+                        <option value="pendente_pagamento">🟡 Pendente (Pix)</option>
                         <option value="inativo">🔴 Inativo (Bloqueado)</option>
                     </select>
                 </div>
@@ -149,6 +154,18 @@
                     <input type="date" id="cliente-vencimento" style="color-scheme: dark;">
                 </div>
             </div>
+
+            <div style="display: flex; gap: 15px;">
+                <div class="input-group" style="flex: 1;">
+                    <label>Telas Simultâneas</label>
+                    <input type="number" id="cliente-telas" value="1" min="1" max="10">
+                </div>
+                <div class="input-group" style="flex: 2;">
+                    <label>Bloquear Pastas (Separe por vírgula)</label>
+                    <input type="text" id="cliente-bloqueios" placeholder="Ex: Adultos, BBB, Premiere" autocomplete="off">
+                </div>
+            </div>
+
             <div class="modal-footer">
                 <button class="btn-cancelar" onclick="fecharModalCliente()">Cancelar</button>
                 <button class="btn-salvar" onclick="salvarCliente()"><i class="fa-solid fa-check"></i> Salvar Cliente</button>
@@ -202,4 +219,3 @@
     <script src="admin.js"></script>
 </body>
 </html>
-
