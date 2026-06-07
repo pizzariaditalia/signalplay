@@ -17,6 +17,7 @@ let servidoresMap = {};
 let servidoresDadosGlobais = {}; 
 let clientesGlobaisCache = []; 
 let bloqueiosGlobais = { canais: [], filmes: [], series: [] };
+let pastasRenderizadasComSucesso = false; // 🛡️ TRAVA ANTI-APAGÃO
 
 document.addEventListener('DOMContentLoaded', () => { 
     try {
@@ -50,7 +51,7 @@ function gerarRelatorios() {
         let total = clientesGlobaisCache.length; let ativos = 0; let inativos = 0; let testes = 0;
         
         let hoje = new Date(); 
-        let agoraMs = hoje.getTime(); // Variável corrigida
+        let agoraMs = hoje.getTime(); 
         
         const tbodyRetencao = document.getElementById('lista-retencao-body');
         if(!tbodyRetencao) return;
@@ -84,9 +85,7 @@ function gerarRelatorios() {
         if(document.getElementById('stat-inativos')) document.getElementById('stat-inativos').innerText = inativos; 
         if(document.getElementById('stat-testes')) document.getElementById('stat-testes').innerText = testes;
         if(document.getElementById('stat-mrr')) document.getElementById('stat-mrr').innerText = mrr.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    } catch(e) {
-        console.error("Erro ao gerar relatórios:", e);
-    }
+    } catch(e) {}
 }
 
 // ============================================================================
@@ -161,7 +160,7 @@ function carregarServidores(initialLoad = false) {
         document.getElementById('loading-servidores').classList.add('escondido');
         document.getElementById('tabela-servidores-container').classList.remove('escondido');
         if(initialLoad) carregarClientes(); 
-    }, (error) => { console.error("Erro ao buscar servidores: ", error); });
+    }, (error) => {});
 }
 
 async function salvarServidor() {
@@ -206,7 +205,7 @@ function abrirModalServidor() {
         document.getElementById('servidor-xtream-user').value = ""; document.getElementById('servidor-xtream-pass').value = "";
         alternarCamposServidor();
         document.getElementById('modal-servidor').classList.add('open');
-    } catch(e) { console.error("Erro ao abrir modal de servidor", e); }
+    } catch(e) {}
 }
 
 function fecharModalServidor() { 
@@ -262,6 +261,8 @@ async function carregarPastasDoServidorSelecionado() {
         renderizarCheckboxes('check-filmes', vodCats, bloqueiosGlobais.filmes || []);
         renderizarCheckboxes('check-series', seriesCats, bloqueiosGlobais.series || []);
 
+        pastasRenderizadasComSucesso = true; // 🛡️ LIBERA A GRAVAÇÃO DO FIREBASE
+
         if(loader) loader.style.display = 'none';
         if(btn) {
             btn.style.display = 'block';
@@ -270,6 +271,7 @@ async function carregarPastasDoServidorSelecionado() {
         if(boxListas) boxListas.style.display = 'flex';
 
     } catch (error) {
+        pastasRenderizadasComSucesso = false;
         if(loader) loader.style.display = 'none';
         if(btn) btn.style.display = 'block';
         alert("Não foi possível conectar ao servidor Xtream para puxar as pastas.");
@@ -291,8 +293,13 @@ function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
 
     let html = "";
     categoriasArr.forEach(cat => {
-        const nomeStr = cat.category_name || "";
-        const isChecked = bloqueiosSalvos.some(b => b.toLowerCase() === nomeStr.toLowerCase()) ? "checked" : "";
+        const nomeStr = (cat.category_name || "").toString().trim();
+        if (nomeStr.length === 0) return;
+        
+        // Compara com Trim e Lowercase para evitar bugs de espaço fantasma
+        const isChecked = bloqueiosSalvos.some(b => 
+            typeof b === 'string' && b.trim().toLowerCase() === nomeStr.toLowerCase()
+        ) ? "checked" : "";
         
         html += `
             <label class="checkbox-item">
@@ -308,7 +315,7 @@ function coletarBloqueiosCheckboxes(containerId) {
     const container = document.getElementById(containerId);
     if(!container) return [];
     const checks = container.querySelectorAll('input[type="checkbox"]:checked');
-    return Array.from(checks).map(c => c.value);
+    return Array.from(checks).map(c => c.value.trim()); // Remove espaços antes de salvar
 }
 
 // ============================================================================
@@ -369,7 +376,7 @@ function carregarClientes() {
         if(document.getElementById('sec-relatorios') && !document.getElementById('sec-relatorios').classList.contains('escondido')) { 
             gerarRelatorios(); 
         }
-    }, (error) => { console.error("Erro ao buscar clientes: ", error); });
+    }, (error) => {});
 }
 
 async function salvarCliente() {
@@ -384,7 +391,9 @@ async function salvarCliente() {
         const telas = inputTelas ? (parseInt(inputTelas.value) || 1) : 1;
 
         const boxListas = document.getElementById('box-listas-bloqueio');
-        if (boxListas && boxListas.style.display !== 'none') {
+        
+        // 🛡️ MÁGICA: Só pega os dados da checkbox se as pastas realmente carregaram
+        if (pastasRenderizadasComSucesso && boxListas && boxListas.style.display !== 'none') {
             bloqueiosGlobais.canais = coletarBloqueiosCheckboxes('check-canais');
             bloqueiosGlobais.filmes = coletarBloqueiosCheckboxes('check-filmes');
             bloqueiosGlobais.series = coletarBloqueiosCheckboxes('check-series');
@@ -424,6 +433,8 @@ async function excluirCliente(id, nome) {
 
 function abrirModalCliente() {
     try {
+        pastasRenderizadasComSucesso = false; // Trava ativada
+        
         document.getElementById('modal-titulo-cliente').innerText = "Adicionar Novo Cliente";
         document.getElementById('cliente-id').value = ""; 
         document.getElementById('cliente-usuario').value = "";
@@ -445,13 +456,13 @@ function abrirModalCliente() {
         }
 
         document.getElementById('modal-cliente').classList.add('open');
-    } catch(e) {
-        console.error("Erro ao abrir modal cliente:", e);
-    }
+    } catch(e) {}
 }
 
 function prepararEdicaoCliente(id) {
     try {
+        pastasRenderizadasComSucesso = false; // Trava ativada
+
         const c = clientesGlobaisCache.find(cliente => cliente.id === id);
         if(!c) return alert("Erro ao buscar dados do cliente.");
 
@@ -464,7 +475,12 @@ function prepararEdicaoCliente(id) {
         document.getElementById('cliente-vencimento').value = c.vencimento || "";
         if(document.getElementById('cliente-telas')) document.getElementById('cliente-telas').value = c.telas || 1;
         
-        bloqueiosGlobais = c.bloqueios || { canais: [], filmes: [], series: [] };
+        // 🛡️ CLONE PROFUNDO: Garante que o firebase não perca a memória
+        bloqueiosGlobais = {
+            canais: [...(c.bloqueios?.canais || [])],
+            filmes: [...(c.bloqueios?.filmes || [])],
+            series: [...(c.bloqueios?.series || [])]
+        };
         
         const boxListas = document.getElementById('box-listas-bloqueio');
         const btnCarregar = document.getElementById('btn-carregar-pastas');
@@ -476,9 +492,7 @@ function prepararEdicaoCliente(id) {
         }
 
         document.getElementById('modal-cliente').classList.add('open');
-    } catch(e) {
-        console.error("Erro ao preparar edição do cliente:", e);
-    }
+    } catch(e) {}
 }
 
 function fecharModalCliente() { 
