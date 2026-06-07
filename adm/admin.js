@@ -14,17 +14,26 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 let servidoresMap = {}; 
-let servidoresDadosGlobais = {}; // Guarda a url e senhas do painel Xtream
+let servidoresDadosGlobais = {}; 
 let clientesGlobaisCache = []; 
 let bloqueiosGlobais = { canais: [], filmes: [], series: [] };
 
-document.addEventListener('DOMContentLoaded', () => { carregarServidores(true); });
+document.addEventListener('DOMContentLoaded', () => { 
+    try {
+        carregarServidores(true); 
+    } catch (e) {
+        console.error("Erro na inicialização:", e);
+    }
+});
 
 function mudarAbaAdm(aba) {
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById('nav-' + aba).classList.add('active');
+    const navAba = document.getElementById('nav-' + aba);
+    if(navAba) navAba.classList.add('active');
+    
     document.querySelectorAll('.view-adm').forEach(el => el.classList.add('escondido'));
-    document.getElementById('sec-' + aba).classList.remove('escondido');
+    const secAba = document.getElementById('sec-' + aba);
+    if(secAba) secAba.classList.remove('escondido');
     
     if(aba === 'clientes') carregarClientes();
     if(aba === 'servidores') carregarServidores();
@@ -35,37 +44,49 @@ function mudarAbaAdm(aba) {
 // 📊 RELATÓRIOS E FINANCEIRO
 // ============================================================================
 function gerarRelatorios() {
-    const ticketMedio = parseFloat(document.getElementById('ticket-medio').value) || 0;
-    let total = clientesGlobaisCache.length; let ativos = 0; let inativos = 0; let testes = 0;
-    let hoje = new Date(); agoraMs = hoje.getTime();
-    
-    const tbodyRetencao = document.getElementById('lista-retencao-body');
-    tbodyRetencao.innerHTML = ""; let vencendoHTML = "";
+    try {
+        const inputTicket = document.getElementById('ticket-medio');
+        const ticketMedio = inputTicket ? (parseFloat(inputTicket.value) || 0) : 35;
+        let total = clientesGlobaisCache.length; let ativos = 0; let inativos = 0; let testes = 0;
+        
+        let hoje = new Date(); 
+        let agoraMs = hoje.getTime(); // Variável corrigida
+        
+        const tbodyRetencao = document.getElementById('lista-retencao-body');
+        if(!tbodyRetencao) return;
+        
+        tbodyRetencao.innerHTML = ""; 
+        let vencendoHTML = "";
 
-    clientesGlobaisCache.forEach(c => {
-        let dataVencimento = null; let diasRestantes = 999;
-        if (c.vencimento) {
-            dataVencimento = new Date(c.vencimento + "T23:59:59");
-            diasRestantes = Math.ceil((dataVencimento.getTime() - agoraMs) / (1000 * 3600 * 24));
-        }
-        let statusReal = c.status;
-        if (dataVencimento && diasRestantes < 0 && (statusReal === 'ativo' || statusReal === 'teste')) { statusReal = 'inativo'; }
-        if (statusReal === 'ativo') ativos++; else if (statusReal === 'teste') testes++; else inativos++;
+        clientesGlobaisCache.forEach(c => {
+            let dataVencimento = null; let diasRestantes = 999;
+            if (c.vencimento) {
+                dataVencimento = new Date(c.vencimento + "T23:59:59");
+                diasRestantes = Math.ceil((dataVencimento.getTime() - agoraMs) / (1000 * 3600 * 24));
+            }
+            let statusReal = c.status;
+            if (dataVencimento && diasRestantes < 0 && (statusReal === 'ativo' || statusReal === 'teste')) { statusReal = 'inativo'; }
+            if (statusReal === 'ativo') ativos++; else if (statusReal === 'teste') testes++; else inativos++;
 
-        if (dataVencimento && diasRestantes >= 0 && diasRestantes <= 5) {
-            let classeVencimento = diasRestantes === 0 ? 'color: var(--danger); font-weight: 800;' : 'color: #ff9f43;';
-            let textoDias = diasRestantes === 0 ? 'Vence HOJE!' : `Em ${diasRestantes} dias`;
-            vencendoHTML += `<tr><td data-label="Usuário"><i class="fa-solid fa-user" style="color:var(--accent-yellow); margin-right:8px;"></i> <strong>${c.usuario}</strong></td><td data-label="Contato"><span style="color:var(--text-muted); font-size:0.8rem;">(WhatsApp API)</span></td><td data-label="Vencimento" style="${classeVencimento}">${dataVencimento.toLocaleDateString('pt-BR')} (${textoDias})</td><td data-label="Status"><span class="badge ${c.status === 'teste' ? 'teste' : 'vencendo'}">${c.status}</span></td></tr>`;
-        }
-    });
+            if (dataVencimento && diasRestantes >= 0 && diasRestantes <= 5) {
+                let classeVencimento = diasRestantes === 0 ? 'color: var(--danger); font-weight: 800;' : 'color: #ff9f43;';
+                let textoDias = diasRestantes === 0 ? 'Vence HOJE!' : `Em ${diasRestantes} dias`;
+                vencendoHTML += `<tr><td data-label="Usuário"><i class="fa-solid fa-user" style="color:var(--accent-yellow); margin-right:8px;"></i> <strong>${c.usuario}</strong></td><td data-label="Contato"><span style="color:var(--text-muted); font-size:0.8rem;">(WhatsApp API)</span></td><td data-label="Vencimento" style="${classeVencimento}">${dataVencimento.toLocaleDateString('pt-BR')} (${textoDias})</td><td data-label="Status"><span class="badge ${c.status === 'teste' ? 'teste' : 'vencendo'}">${c.status}</span></td></tr>`;
+            }
+        });
 
-    if (vencendoHTML === "") { tbodyRetencao.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--success); padding: 30px;"><i class="fa-solid fa-face-smile"></i> Nenhum cliente prestes a vencer. A base está saudável!</td></tr>`; } 
-    else { tbodyRetencao.innerHTML = vencendoHTML; }
+        if (vencendoHTML === "") { tbodyRetencao.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--success); padding: 30px;"><i class="fa-solid fa-face-smile"></i> Nenhum cliente prestes a vencer. A base está saudável!</td></tr>`; } 
+        else { tbodyRetencao.innerHTML = vencendoHTML; }
 
-    let mrr = ativos * ticketMedio;
-    document.getElementById('stat-total').innerText = total; document.getElementById('stat-ativos').innerText = ativos;
-    document.getElementById('stat-inativos').innerText = inativos; document.getElementById('stat-testes').innerText = testes;
-    document.getElementById('stat-mrr').innerText = mrr.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        let mrr = ativos * ticketMedio;
+        if(document.getElementById('stat-total')) document.getElementById('stat-total').innerText = total; 
+        if(document.getElementById('stat-ativos')) document.getElementById('stat-ativos').innerText = ativos;
+        if(document.getElementById('stat-inativos')) document.getElementById('stat-inativos').innerText = inativos; 
+        if(document.getElementById('stat-testes')) document.getElementById('stat-testes').innerText = testes;
+        if(document.getElementById('stat-mrr')) document.getElementById('stat-mrr').innerText = mrr.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    } catch(e) {
+        console.error("Erro ao gerar relatórios:", e);
+    }
 }
 
 // ============================================================================
@@ -97,6 +118,8 @@ function carregarServidores(initialLoad = false) {
         const tbody = document.getElementById('lista-servidores-body');
         const selectCliente = document.getElementById('cliente-servidor');
         
+        if(!tbody || !selectCliente) return;
+
         tbody.innerHTML = ''; selectCliente.innerHTML = '<option value="">-- Selecione um Servidor --</option>'; 
         servidoresMap = {}; servidoresDadosGlobais = {};
 
@@ -106,7 +129,7 @@ function carregarServidores(initialLoad = false) {
             snapshot.forEach((doc) => {
                 const srv = doc.data(); const id = doc.id;
                 servidoresMap[id] = srv.nome; 
-                servidoresDadosGlobais[id] = srv; // Memória VIP para puxar as categorias
+                servidoresDadosGlobais[id] = srv; 
 
                 let badgeTipo = '';
                 if(srv.tipo === 'xtream') badgeTipo = '<span class="badge" style="background:#e67e22; color:#fff; border-color:#d35400;">Xtream</span>';
@@ -138,7 +161,7 @@ function carregarServidores(initialLoad = false) {
         document.getElementById('loading-servidores').classList.add('escondido');
         document.getElementById('tabela-servidores-container').classList.remove('escondido');
         if(initialLoad) carregarClientes(); 
-    }, (error) => { alert("Erro ao buscar servidores: " + error.message); });
+    }, (error) => { console.error("Erro ao buscar servidores: ", error); });
 }
 
 async function salvarServidor() {
@@ -176,16 +199,20 @@ async function excluirServidor(id, nome) {
 }
 
 function abrirModalServidor() {
-    document.getElementById('modal-titulo-servidor').innerText = "Adicionar Servidor";
-    document.getElementById('servidor-id').value = ""; document.getElementById('servidor-nome').value = "";
-    document.getElementById('servidor-url').value = ""; document.getElementById('servidor-tipo').value = "xtream";
-    document.getElementById('servidor-xtream-user').value = ""; document.getElementById('servidor-xtream-pass').value = "";
-    alternarCamposServidor();
-    document.getElementById('modal-servidor').classList.add('open');
+    try {
+        document.getElementById('modal-titulo-servidor').innerText = "Adicionar Servidor";
+        document.getElementById('servidor-id').value = ""; document.getElementById('servidor-nome').value = "";
+        document.getElementById('servidor-url').value = ""; document.getElementById('servidor-tipo').value = "xtream";
+        document.getElementById('servidor-xtream-user').value = ""; document.getElementById('servidor-xtream-pass').value = "";
+        alternarCamposServidor();
+        document.getElementById('modal-servidor').classList.add('open');
+    } catch(e) { console.error("Erro ao abrir modal de servidor", e); }
 }
 
-function fecharModalServidor() { document.getElementById('modal-servidor').classList.remove('open'); }
-
+function fecharModalServidor() { 
+    const m = document.getElementById('modal-servidor');
+    if(m) m.classList.remove('open'); 
+}
 
 // ============================================================================
 // 🔌 INTEGRAÇÃO COM API XTREAM CODES (Busca as pastas automaticamente)
@@ -203,14 +230,13 @@ async function carregarPastasDoServidorSelecionado() {
     const loader = document.getElementById('loader-pastas');
     const boxListas = document.getElementById('box-listas-bloqueio');
 
-    btn.style.display = 'none';
-    loader.style.display = 'block';
-    boxListas.style.display = 'none';
+    if(btn) btn.style.display = 'none';
+    if(loader) loader.style.display = 'block';
+    if(boxListas) boxListas.style.display = 'none';
 
     try {
         const urlBase = srv.url.endsWith('/') ? srv.url.slice(0, -1) : srv.url;
         
-        // Função interna para driblar bloqueios de CORS do navegador
         const fetchCategoriaSeguro = async (action) => {
             const targetUrl = `${urlBase}/player_api.php?username=${srv.xtream_user}&password=${srv.xtream_pass}&action=${action}`;
             try {
@@ -218,7 +244,6 @@ async function carregarPastasDoServidorSelecionado() {
                 if (res.ok) return await res.json();
             } catch(e) {}
             
-            // Se der erro de CORS direto, usa o proxy de emergência AllOrigins
             try {
                 let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 let resProxy = await fetch(proxyUrl);
@@ -237,20 +262,24 @@ async function carregarPastasDoServidorSelecionado() {
         renderizarCheckboxes('check-filmes', vodCats, bloqueiosGlobais.filmes || []);
         renderizarCheckboxes('check-series', seriesCats, bloqueiosGlobais.series || []);
 
-        loader.style.display = 'none';
-        btn.style.display = 'block';
-        btn.innerHTML = '<i class="fa-solid fa-sync"></i> Recarregar Pastas do Servidor';
-        boxListas.style.display = 'flex';
+        if(loader) loader.style.display = 'none';
+        if(btn) {
+            btn.style.display = 'block';
+            btn.innerHTML = '<i class="fa-solid fa-sync"></i> Recarregar Pastas do Servidor';
+        }
+        if(boxListas) boxListas.style.display = 'flex';
 
     } catch (error) {
-        loader.style.display = 'none';
-        btn.style.display = 'block';
+        if(loader) loader.style.display = 'none';
+        if(btn) btn.style.display = 'block';
         alert("Não foi possível conectar ao servidor Xtream para puxar as pastas.");
     }
 }
 
 function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
     const container = document.getElementById(containerId);
+    if(!container) return;
+    
     container.innerHTML = "";
     
     if (!categoriasArr || categoriasArr.length === 0) {
@@ -258,7 +287,6 @@ function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
         return;
     }
 
-    // Organiza em ordem alfabética para facilitar a busca visual
     categoriasArr.sort((a, b) => (a.category_name || "").localeCompare(b.category_name || ""));
 
     let html = "";
@@ -283,13 +311,14 @@ function coletarBloqueiosCheckboxes(containerId) {
     return Array.from(checks).map(c => c.value);
 }
 
-
 // ============================================================================
 // ⚙️ MÓDULO DE CLIENTES
 // ============================================================================
 function carregarClientes() {
     db.collection("usuarios").orderBy("criadoEm", "desc").onSnapshot((snapshot) => {
         const tbody = document.getElementById('lista-clientes-body'); 
+        if(!tbody) return;
+        
         tbody.innerHTML = ''; clientesGlobaisCache = [];
 
         if (snapshot.empty) {
@@ -337,43 +366,49 @@ function carregarClientes() {
         document.getElementById('loading-clientes').classList.add('escondido');
         document.getElementById('tabela-clientes-container').classList.remove('escondido');
         
-        if(document.getElementById('sec-relatorios').classList.contains('escondido') === false) { gerarRelatorios(); }
-    }, (error) => { alert("Erro ao buscar clientes: " + error.message); });
+        if(document.getElementById('sec-relatorios') && !document.getElementById('sec-relatorios').classList.contains('escondido')) { 
+            gerarRelatorios(); 
+        }
+    }, (error) => { console.error("Erro ao buscar clientes: ", error); });
 }
 
 async function salvarCliente() {
-    const id = document.getElementById('cliente-id').value; 
-    const usuario = document.getElementById('cliente-usuario').value.trim();
-    const senha = document.getElementById('cliente-senha').value.trim(); 
-    const status = document.getElementById('cliente-status').value;
-    const servidor_id = document.getElementById('cliente-servidor').value; 
-    const vencimento = document.getElementById('cliente-vencimento').value;
-    const telas = parseInt(document.getElementById('cliente-telas').value) || 1;
-
-    // Se o painel de pastas estiver visível, a gente coleta as caixinhas marcadas.
-    // Se não estiver (ex: você só foi mudar o vencimento), a gente não mexe, preservando as que já estavam salvas.
-    if (document.getElementById('box-listas-bloqueio').style.display !== 'none') {
-        bloqueiosGlobais.canais = coletarBloqueiosCheckboxes('check-canais');
-        bloqueiosGlobais.filmes = coletarBloqueiosCheckboxes('check-filmes');
-        bloqueiosGlobais.series = coletarBloqueiosCheckboxes('check-series');
-    }
-
-    if(!usuario || !senha) return alert("Preencha Usuário e Senha.");
-    if(!servidor_id) return alert("Por favor, selecione um Servidor para o cliente.");
-
-    const dados = { 
-        usuario: usuario, 
-        senha: senha, 
-        status: status, 
-        servidor_id: servidor_id, 
-        vencimento: vencimento,
-        telas: telas,
-        bloqueios: bloqueiosGlobais 
-    };
-
     try {
-        if (id) { await db.collection("usuarios").doc(id).update(dados); } 
-        else { dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); await db.collection("usuarios").add(dados); }
+        const id = document.getElementById('cliente-id').value; 
+        const usuario = document.getElementById('cliente-usuario').value.trim();
+        const senha = document.getElementById('cliente-senha').value.trim(); 
+        const status = document.getElementById('cliente-status').value;
+        const servidor_id = document.getElementById('cliente-servidor').value; 
+        const vencimento = document.getElementById('cliente-vencimento').value;
+        const inputTelas = document.getElementById('cliente-telas');
+        const telas = inputTelas ? (parseInt(inputTelas.value) || 1) : 1;
+
+        const boxListas = document.getElementById('box-listas-bloqueio');
+        if (boxListas && boxListas.style.display !== 'none') {
+            bloqueiosGlobais.canais = coletarBloqueiosCheckboxes('check-canais');
+            bloqueiosGlobais.filmes = coletarBloqueiosCheckboxes('check-filmes');
+            bloqueiosGlobais.series = coletarBloqueiosCheckboxes('check-series');
+        }
+
+        if(!usuario || !senha) return alert("Preencha Usuário e Senha.");
+        if(!servidor_id) return alert("Por favor, selecione um Servidor para o cliente.");
+
+        const dados = { 
+            usuario: usuario, 
+            senha: senha, 
+            status: status, 
+            servidor_id: servidor_id, 
+            vencimento: vencimento,
+            telas: telas,
+            bloqueios: bloqueiosGlobais 
+        };
+
+        if (id) { 
+            await db.collection("usuarios").doc(id).update(dados); 
+        } else { 
+            dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); 
+            await db.collection("usuarios").add(dados); 
+        }
         fecharModalCliente();
     } catch (error) { 
         alert("Erro ao salvar cliente: " + error.message); 
@@ -388,46 +423,65 @@ async function excluirCliente(id, nome) {
 }
 
 function abrirModalCliente() {
-    document.getElementById('modal-titulo-cliente').innerText = "Adicionar Novo Cliente";
-    document.getElementById('cliente-id').value = ""; 
-    document.getElementById('cliente-usuario').value = "";
-    document.getElementById('cliente-senha').value = ""; 
-    document.getElementById('cliente-status').value = "ativo";
-    document.getElementById('cliente-servidor').value = ""; 
-    document.getElementById('cliente-vencimento').value = "";
-    document.getElementById('cliente-telas').value = 1;
+    try {
+        document.getElementById('modal-titulo-cliente').innerText = "Adicionar Novo Cliente";
+        document.getElementById('cliente-id').value = ""; 
+        document.getElementById('cliente-usuario').value = "";
+        document.getElementById('cliente-senha').value = ""; 
+        document.getElementById('cliente-status').value = "ativo";
+        document.getElementById('cliente-servidor').value = ""; 
+        document.getElementById('cliente-vencimento').value = "";
+        if(document.getElementById('cliente-telas')) document.getElementById('cliente-telas').value = 1;
 
-    bloqueiosGlobais = { canais: [], filmes: [], series: [] };
-    
-    // Reseta a interface das pastas
-    document.getElementById('box-listas-bloqueio').style.display = 'none';
-    document.getElementById('btn-carregar-pastas').style.display = 'block';
-    document.getElementById('btn-carregar-pastas').innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+        bloqueiosGlobais = { canais: [], filmes: [], series: [] };
+        
+        const boxListas = document.getElementById('box-listas-bloqueio');
+        const btnCarregar = document.getElementById('btn-carregar-pastas');
+        
+        if(boxListas) boxListas.style.display = 'none';
+        if(btnCarregar) {
+            btnCarregar.style.display = 'block';
+            btnCarregar.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+        }
 
-    document.getElementById('modal-cliente').classList.add('open');
+        document.getElementById('modal-cliente').classList.add('open');
+    } catch(e) {
+        console.error("Erro ao abrir modal cliente:", e);
+    }
 }
 
 function prepararEdicaoCliente(id) {
-    const c = clientesGlobaisCache.find(cliente => cliente.id === id);
-    if(!c) return alert("Erro ao buscar dados do cliente.");
+    try {
+        const c = clientesGlobaisCache.find(cliente => cliente.id === id);
+        if(!c) return alert("Erro ao buscar dados do cliente.");
 
-    document.getElementById('modal-titulo-cliente').innerText = "Editar Cliente";
-    document.getElementById('cliente-id').value = id; 
-    document.getElementById('cliente-usuario').value = c.usuario;
-    document.getElementById('cliente-senha').value = c.senha; 
-    document.getElementById('cliente-status').value = c.status;
-    document.getElementById('cliente-servidor').value = c.servidor_id || ""; 
-    document.getElementById('cliente-vencimento').value = c.vencimento || "";
-    document.getElementById('cliente-telas').value = c.telas || 1;
-    
-    // Puxa as pastas bloqueadas e esconde a aba até ele clicar no botão
-    bloqueiosGlobais = c.bloqueios || { canais: [], filmes: [], series: [] };
-    
-    document.getElementById('box-listas-bloqueio').style.display = 'none';
-    document.getElementById('btn-carregar-pastas').style.display = 'block';
-    document.getElementById('btn-carregar-pastas').innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+        document.getElementById('modal-titulo-cliente').innerText = "Editar Cliente";
+        document.getElementById('cliente-id').value = id; 
+        document.getElementById('cliente-usuario').value = c.usuario;
+        document.getElementById('cliente-senha').value = c.senha; 
+        document.getElementById('cliente-status').value = c.status;
+        document.getElementById('cliente-servidor').value = c.servidor_id || ""; 
+        document.getElementById('cliente-vencimento').value = c.vencimento || "";
+        if(document.getElementById('cliente-telas')) document.getElementById('cliente-telas').value = c.telas || 1;
+        
+        bloqueiosGlobais = c.bloqueios || { canais: [], filmes: [], series: [] };
+        
+        const boxListas = document.getElementById('box-listas-bloqueio');
+        const btnCarregar = document.getElementById('btn-carregar-pastas');
+        
+        if(boxListas) boxListas.style.display = 'none';
+        if(btnCarregar) {
+            btnCarregar.style.display = 'block';
+            btnCarregar.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+        }
 
-    document.getElementById('modal-cliente').classList.add('open');
+        document.getElementById('modal-cliente').classList.add('open');
+    } catch(e) {
+        console.error("Erro ao preparar edição do cliente:", e);
+    }
 }
 
-function fecharModalCliente() { document.getElementById('modal-cliente').classList.remove('open'); }
+function fecharModalCliente() { 
+    const m = document.getElementById('modal-cliente');
+    if(m) m.classList.remove('open'); 
+}
