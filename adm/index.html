@@ -155,15 +155,40 @@
                 </div>
             </div>
 
-            <div style="display: flex; gap: 15px;">
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
                 <div class="input-group" style="flex: 1;">
                     <label>Telas Simultâneas</label>
                     <input type="number" id="cliente-telas" value="1" min="1" max="10">
                 </div>
-                <div class="input-group" style="flex: 2;">
-                    <label>Bloquear Pastas (Separe por vírgula)</label>
-                    <input type="text" id="cliente-bloqueios" placeholder="Ex: Adultos, BBB, Premiere" autocomplete="off">
+            </div>
+
+            <label style="display: block; color: var(--text-muted); font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Bloqueio de Pastas (Ocultar do Cliente)</label>
+            
+            <button type="button" class="btn-outline" onclick="carregarPastasDoServidorSelecionado()" id="btn-carregar-pastas" style="width: 100%; margin-bottom: 15px; padding: 12px; border: 1px solid var(--accent-yellow); color: var(--accent-yellow); background: rgba(255, 204, 0, 0.05); border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s;">
+                <i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor
+            </button>
+            
+            <div id="loader-pastas" style="display:none; text-align:center; color: var(--text-muted); margin-bottom: 15px; padding: 10px;">
+                <i class="fa-solid fa-circle-notch fa-spin"></i> Conectando ao servidor Xtream...
+            </div>
+
+            <div class="bloqueios-grid" id="box-listas-bloqueio" style="display: none; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+                
+                <div class="bloqueio-box">
+                    <span class="bloqueio-title"><i class="fa-solid fa-tv"></i> Canais</span>
+                    <div class="lista-checkboxes" id="check-canais"></div>
                 </div>
+
+                <div class="bloqueio-box">
+                    <span class="bloqueio-title"><i class="fa-solid fa-film"></i> Filmes</span>
+                    <div class="lista-checkboxes" id="check-filmes"></div>
+                </div>
+
+                <div class="bloqueio-box">
+                    <span class="bloqueio-title"><i class="fa-solid fa-layer-group"></i> Séries</span>
+                    <div class="lista-checkboxes" id="check-series"></div>
+                </div>
+
             </div>
 
             <div class="modal-footer">
