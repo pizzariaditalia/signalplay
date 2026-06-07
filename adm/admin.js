@@ -1,5 +1,5 @@
 // ============================================================================
-// 🔥 INICIALIZAÇÃO DO FIREBASE (COM SUAS CHAVES)
+// 🔥 INICIALIZAÇÃO DO FIREBASE
 // ============================================================================
 const firebaseConfig = {
     apiKey: "AIzaSyBSYJYEFLlDwBYsQC0I76n9NfAph2oWuLI",
@@ -183,7 +183,7 @@ function abrirModalServidor() {
 function fecharModalServidor() { document.getElementById('modal-servidor').classList.remove('open'); }
 
 // ============================================================================
-// ⚙️ MÓDULO DE CLIENTES
+// ⚙️ MÓDULO DE CLIENTES (COM CONTROLE DE TELAS E BLOQUEIOS)
 // ============================================================================
 function carregarClientes() {
     db.collection("usuarios").orderBy("criadoEm", "desc").onSnapshot((snapshot) => {
@@ -212,10 +212,12 @@ function carregarClientes() {
                 let statusBadge = '';
                 if (statusReal === 'ativo') statusBadge = '<span class="badge ativo">Ativo</span>';
                 else if (statusReal === 'teste') statusBadge = '<span class="badge teste">Teste</span>';
+                else if (statusReal === 'pendente_pagamento') statusBadge = '<span class="badge vencendo">Pendente PIX</span>';
                 else statusBadge = '<span class="badge inativo">Inativo</span>';
                 
                 const nomeServidor = servidoresMap[c.servidor_id] || '<span style="color:var(--danger)">Sem Servidor</span>';
 
+                // Agora o botão de editar só passa o ID! A função busca o resto no cache.
                 tbody.innerHTML += `
                     <tr>
                         <td data-label="Usuário"><i class="fa-solid fa-user" style="color:var(--accent-yellow); margin-right:8px;"></i> <strong>${c.usuario}</strong></td>
@@ -224,7 +226,7 @@ function carregarClientes() {
                         <td data-label="Status">${statusBadge}</td>
                         <td data-label="Vencimento">${textoVencimento}</td>
                         <td data-label="Ações" style="text-align: right;">
-                            <button class="acao-btn edit" onclick="prepararEdicaoCliente('${id}', '${c.usuario}', '${c.senha}', '${c.status}', '${c.servidor_id}', '${c.vencimento || ''}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
+                            <button class="acao-btn edit" onclick="prepararEdicaoCliente('${id}')" title="Editar"><i class="fa-solid fa-pen"></i></button>
                             <button class="acao-btn delete" onclick="excluirCliente('${id}', '${c.usuario}')" title="Excluir"><i class="fa-solid fa-trash-can"></i></button>
                         </td>
                     </tr>
@@ -239,41 +241,86 @@ function carregarClientes() {
 }
 
 async function salvarCliente() {
-    const id = document.getElementById('cliente-id').value; const usuario = document.getElementById('cliente-usuario').value.trim();
-    const senha = document.getElementById('cliente-senha').value.trim(); const status = document.getElementById('cliente-status').value;
-    const servidor_id = document.getElementById('cliente-servidor').value; const vencimento = document.getElementById('cliente-vencimento').value;
+    const id = document.getElementById('cliente-id').value; 
+    const usuario = document.getElementById('cliente-usuario').value.trim();
+    const senha = document.getElementById('cliente-senha').value.trim(); 
+    const status = document.getElementById('cliente-status').value;
+    const servidor_id = document.getElementById('cliente-servidor').value; 
+    const vencimento = document.getElementById('cliente-vencimento').value;
+    
+    // Captura os novos campos de limites e bloqueios
+    const telas = parseInt(document.getElementById('cliente-telas').value) || 1;
+    const bloqueios = document.getElementById('cliente-bloqueios').value.trim();
 
     if(!usuario || !senha) return alert("Preencha Usuário e Senha.");
     if(!servidor_id) return alert("Por favor, selecione um Servidor para o cliente.");
 
-    const dados = { usuario: usuario, senha: senha, status: status, servidor_id: servidor_id, vencimento: vencimento };
+    const dados = { 
+        usuario: usuario, 
+        senha: senha, 
+        status: status, 
+        servidor_id: servidor_id, 
+        vencimento: vencimento,
+        telas: telas,          // NOVO: Limite de telas
+        bloqueios: bloqueios   // NOVO: Pastas bloqueadas (Ex: "Adultos, BBB")
+    };
 
     try {
-        if (id) { await db.collection("usuarios").doc(id).update(dados); } 
-        else { dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); await db.collection("usuarios").add(dados); }
+        if (id) { 
+            await db.collection("usuarios").doc(id).update(dados); 
+        } else { 
+            dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); 
+            await db.collection("usuarios").add(dados); 
+        }
         fecharModalCliente();
-    } catch (error) { alert("Erro ao salvar cliente: " + error.message); }
+    } catch (error) { 
+        alert("Erro ao salvar cliente: " + error.message); 
+    }
 }
 
 async function excluirCliente(id, nome) {
-    if(confirm(`Excluir o acesso de "${nome}"?`)) { try { await db.collection("usuarios").doc(id).delete(); } catch (error) { alert("Erro ao excluir: " + error.message); } }
+    if(confirm(`Excluir o acesso de "${nome}"?`)) { 
+        try { await db.collection("usuarios").doc(id).delete(); } 
+        catch (error) { alert("Erro ao excluir: " + error.message); } 
+    }
 }
 
 function abrirModalCliente() {
     document.getElementById('modal-titulo-cliente').innerText = "Adicionar Novo Cliente";
-    document.getElementById('cliente-id').value = ""; document.getElementById('cliente-usuario').value = "";
-    document.getElementById('cliente-senha').value = ""; document.getElementById('cliente-status').value = "ativo";
-    document.getElementById('cliente-servidor').value = ""; document.getElementById('cliente-vencimento').value = "";
+    document.getElementById('cliente-id').value = ""; 
+    document.getElementById('cliente-usuario').value = "";
+    document.getElementById('cliente-senha').value = ""; 
+    document.getElementById('cliente-status').value = "ativo";
+    document.getElementById('cliente-servidor').value = ""; 
+    document.getElementById('cliente-vencimento').value = "";
+    
+    // Reseta os novos campos
+    document.getElementById('cliente-telas').value = 1;
+    document.getElementById('cliente-bloqueios').value = "";
+
     document.getElementById('modal-cliente').classList.add('open');
 }
 
-function prepararEdicaoCliente(id, usuario, senha, status, servidor_id, vencimento) {
+// Agora usamos o cache global para não precisar passar milhões de parâmetros no botão HTML
+function prepararEdicaoCliente(id) {
+    const c = clientesGlobaisCache.find(cliente => cliente.id === id);
+    if(!c) return alert("Erro ao buscar dados do cliente.");
+
     document.getElementById('modal-titulo-cliente').innerText = "Editar Cliente";
-    document.getElementById('cliente-id').value = id; document.getElementById('cliente-usuario').value = usuario;
-    document.getElementById('cliente-senha').value = senha; document.getElementById('cliente-status').value = status;
-    document.getElementById('cliente-servidor').value = servidor_id || ""; document.getElementById('cliente-vencimento').value = vencimento;
+    document.getElementById('cliente-id').value = id; 
+    document.getElementById('cliente-usuario').value = c.usuario;
+    document.getElementById('cliente-senha').value = c.senha; 
+    document.getElementById('cliente-status').value = c.status;
+    document.getElementById('cliente-servidor').value = c.servidor_id || ""; 
+    document.getElementById('cliente-vencimento').value = c.vencimento || "";
+    
+    // Puxa os dados de bloqueio e telas (Se for cliente antigo, o padrão é 1 tela e 0 bloqueios)
+    document.getElementById('cliente-telas').value = c.telas || 1;
+    document.getElementById('cliente-bloqueios').value = c.bloqueios || "";
+
     document.getElementById('modal-cliente').classList.add('open');
 }
 
-function fecharModalCliente() { document.getElementById('modal-cliente').classList.remove('open'); }
-
+function fecharModalCliente() { 
+    document.getElementById('modal-cliente').classList.remove('open'); 
+}
