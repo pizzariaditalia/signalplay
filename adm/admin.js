@@ -17,14 +17,9 @@ let servidoresMap = {};
 let servidoresDadosGlobais = {}; 
 let clientesGlobaisCache = []; 
 let bloqueiosGlobais = { canais: [], filmes: [], series: [] };
-let pastasRenderizadasComSucesso = false; // 🛡️ TRAVA ANTI-APAGÃO
 
 document.addEventListener('DOMContentLoaded', () => { 
-    try {
-        carregarServidores(true); 
-    } catch (e) {
-        console.error("Erro na inicialização:", e);
-    }
+    carregarServidores(true); 
 });
 
 function mudarAbaAdm(aba) {
@@ -160,7 +155,7 @@ function carregarServidores(initialLoad = false) {
         document.getElementById('loading-servidores').classList.add('escondido');
         document.getElementById('tabela-servidores-container').classList.remove('escondido');
         if(initialLoad) carregarClientes(); 
-    }, (error) => {});
+    }, (error) => { console.error("Erro ao buscar servidores:", error); });
 }
 
 async function salvarServidor() {
@@ -214,8 +209,61 @@ function fecharModalServidor() {
 }
 
 // ============================================================================
-// 🔌 INTEGRAÇÃO COM API XTREAM CODES (Busca as pastas automaticamente)
+// 🔌 SISTEMA DE TAGS E CHECKBOXES BLINDADO
 // ============================================================================
+function atualizarBadgesVisuais() {
+    const container = document.getElementById('badges-bloqueios');
+    if (!container) return;
+    
+    container.innerHTML = "";
+    let temAlgum = false;
+
+    const renderBadge = (lista, tipo, icone) => {
+        if(!lista) return;
+        lista.forEach(nome => {
+            temAlgum = true;
+            const safeNome = nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            container.innerHTML += `
+                <span class="badge-bloqueio">
+                    <i class="fa-solid ${icone}" style="color:var(--text-muted); font-size:0.7rem;"></i> 
+                    ${nome} 
+                    <i class="fa-solid fa-xmark" onclick="removerBloqueio('${tipo}', '${safeNome}')"></i>
+                </span>
+            `;
+        });
+    };
+
+    renderBadge(bloqueiosGlobais.canais, 'canais', 'fa-tv');
+    renderBadge(bloqueiosGlobais.filmes, 'filmes', 'fa-film');
+    renderBadge(bloqueiosGlobais.series, 'series', 'fa-layer-group');
+
+    if (!temAlgum) {
+        container.innerHTML = `<span style="color:var(--text-muted); font-size: 0.85rem;">Nenhuma pasta bloqueada. O cliente tem acesso total.</span>`;
+    }
+}
+
+function removerBloqueio(tipo, nome) {
+    const decNome = nome.replace(/&quot;/g, '"');
+    bloqueiosGlobais[tipo] = bloqueiosGlobais[tipo].filter(b => b !== decNome);
+    atualizarBadgesVisuais();
+    
+    // Desmarca o checkbox automaticamente se a lista estiver aberta
+    const check = document.querySelector(`input[type="checkbox"][data-tipo="${tipo}"][value="${nome}"]`);
+    if (check) check.checked = false;
+}
+
+function toggleCheckboxBloqueio(tipo, checkbox) {
+    const decNome = checkbox.value.replace(/&quot;/g, '"');
+    if (checkbox.checked) {
+        if (!bloqueiosGlobais[tipo].includes(decNome)) {
+            bloqueiosGlobais[tipo].push(decNome);
+        }
+    } else {
+        bloqueiosGlobais[tipo] = bloqueiosGlobais[tipo].filter(b => b !== decNome);
+    }
+    atualizarBadgesVisuais();
+}
+
 async function carregarPastasDoServidorSelecionado() {
     const servId = document.getElementById('cliente-servidor').value;
     if (!servId) return alert("Por favor, selecione um Servidor da lista primeiro.");
@@ -248,20 +296,16 @@ async function carregarPastasDoServidorSelecionado() {
                 let resProxy = await fetch(proxyUrl);
                 let dataProxy = await resProxy.json();
                 return JSON.parse(dataProxy.contents);
-            } catch(e) {
-                return [];
-            }
+            } catch(e) { return []; }
         };
 
         const liveCats = await fetchCategoriaSeguro('get_live_categories');
         const vodCats = await fetchCategoriaSeguro('get_vod_categories');
         const seriesCats = await fetchCategoriaSeguro('get_series_categories');
 
-        renderizarCheckboxes('check-canais', liveCats, bloqueiosGlobais.canais || []);
-        renderizarCheckboxes('check-filmes', vodCats, bloqueiosGlobais.filmes || []);
-        renderizarCheckboxes('check-series', seriesCats, bloqueiosGlobais.series || []);
-
-        pastasRenderizadasComSucesso = true; // 🛡️ LIBERA A GRAVAÇÃO DO FIREBASE
+        renderizarCheckboxes('check-canais', liveCats, 'canais');
+        renderizarCheckboxes('check-filmes', vodCats, 'filmes');
+        renderizarCheckboxes('check-series', seriesCats, 'series');
 
         if(loader) loader.style.display = 'none';
         if(btn) {
@@ -271,19 +315,17 @@ async function carregarPastasDoServidorSelecionado() {
         if(boxListas) boxListas.style.display = 'flex';
 
     } catch (error) {
-        pastasRenderizadasComSucesso = false;
         if(loader) loader.style.display = 'none';
         if(btn) btn.style.display = 'block';
         alert("Não foi possível conectar ao servidor Xtream para puxar as pastas.");
     }
 }
 
-function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
+function renderizarCheckboxes(containerId, categoriasArr, tipo) {
     const container = document.getElementById(containerId);
     if(!container) return;
     
     container.innerHTML = "";
-    
     if (!categoriasArr || categoriasArr.length === 0) {
         container.innerHTML = "<span style='color:var(--text-muted);font-size:0.85rem;'>Nenhuma pasta encontrada.</span>";
         return;
@@ -296,26 +338,18 @@ function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
         const nomeStr = (cat.category_name || "").toString().trim();
         if (nomeStr.length === 0) return;
         
-        // Compara com Trim e Lowercase para evitar bugs de espaço fantasma
-        const isChecked = bloqueiosSalvos.some(b => 
-            typeof b === 'string' && b.trim().toLowerCase() === nomeStr.toLowerCase()
-        ) ? "checked" : "";
+        // Verifica se a pasta já existe na nossa memória global (Tags Visuais)
+        const isChecked = bloqueiosGlobais[tipo].some(b => typeof b === 'string' && b.toLowerCase() === nomeStr.toLowerCase()) ? "checked" : "";
+        const safeNome = nomeStr.replace(/"/g, '&quot;');
         
         html += `
             <label class="checkbox-item">
-                <input type="checkbox" value="${nomeStr.replace(/"/g, '&quot;')}" ${isChecked}>
+                <input type="checkbox" data-tipo="${tipo}" value="${safeNome}" onchange="toggleCheckboxBloqueio('${tipo}', this)" ${isChecked}>
                 ${nomeStr}
             </label>
         `;
     });
     container.innerHTML = html;
-}
-
-function coletarBloqueiosCheckboxes(containerId) {
-    const container = document.getElementById(containerId);
-    if(!container) return [];
-    const checks = container.querySelectorAll('input[type="checkbox"]:checked');
-    return Array.from(checks).map(c => c.value.trim()); // Remove espaços antes de salvar
 }
 
 // ============================================================================
@@ -390,18 +424,11 @@ async function salvarCliente() {
         const inputTelas = document.getElementById('cliente-telas');
         const telas = inputTelas ? (parseInt(inputTelas.value) || 1) : 1;
 
-        const boxListas = document.getElementById('box-listas-bloqueio');
-        
-        // 🛡️ MÁGICA: Só pega os dados da checkbox se as pastas realmente carregaram
-        if (pastasRenderizadasComSucesso && boxListas && boxListas.style.display !== 'none') {
-            bloqueiosGlobais.canais = coletarBloqueiosCheckboxes('check-canais');
-            bloqueiosGlobais.filmes = coletarBloqueiosCheckboxes('check-filmes');
-            bloqueiosGlobais.series = coletarBloqueiosCheckboxes('check-series');
-        }
-
         if(!usuario || !senha) return alert("Preencha Usuário e Senha.");
         if(!servidor_id) return alert("Por favor, selecione um Servidor para o cliente.");
 
+        // O SEGREDO ESTÁ AQUI: Nós simplesmente mandamos a memória das Tags Visuais para o Firebase!
+        // Não dependemos mais das caixinhas ocultas ou falhas da API Xtream.
         const dados = { 
             usuario: usuario, 
             senha: senha, 
@@ -433,8 +460,6 @@ async function excluirCliente(id, nome) {
 
 function abrirModalCliente() {
     try {
-        pastasRenderizadasComSucesso = false; // Trava ativada
-        
         document.getElementById('modal-titulo-cliente').innerText = "Adicionar Novo Cliente";
         document.getElementById('cliente-id').value = ""; 
         document.getElementById('cliente-usuario').value = "";
@@ -444,7 +469,9 @@ function abrirModalCliente() {
         document.getElementById('cliente-vencimento').value = "";
         if(document.getElementById('cliente-telas')) document.getElementById('cliente-telas').value = 1;
 
+        // Limpa a memória e redesenha as Tags visuais zeradas
         bloqueiosGlobais = { canais: [], filmes: [], series: [] };
+        atualizarBadgesVisuais();
         
         const boxListas = document.getElementById('box-listas-bloqueio');
         const btnCarregar = document.getElementById('btn-carregar-pastas');
@@ -452,7 +479,7 @@ function abrirModalCliente() {
         if(boxListas) boxListas.style.display = 'none';
         if(btnCarregar) {
             btnCarregar.style.display = 'block';
-            btnCarregar.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+            btnCarregar.innerHTML = '<i class="fa-solid fa-list-check"></i> Abrir Lista Completa do Servidor';
         }
 
         document.getElementById('modal-cliente').classList.add('open');
@@ -461,8 +488,6 @@ function abrirModalCliente() {
 
 function prepararEdicaoCliente(id) {
     try {
-        pastasRenderizadasComSucesso = false; // Trava ativada
-
         const c = clientesGlobaisCache.find(cliente => cliente.id === id);
         if(!c) return alert("Erro ao buscar dados do cliente.");
 
@@ -475,12 +500,14 @@ function prepararEdicaoCliente(id) {
         document.getElementById('cliente-vencimento').value = c.vencimento || "";
         if(document.getElementById('cliente-telas')) document.getElementById('cliente-telas').value = c.telas || 1;
         
-        // 🛡️ CLONE PROFUNDO: Garante que o firebase não perca a memória
+        // Clona as informações do banco para a memória local
         bloqueiosGlobais = {
             canais: [...(c.bloqueios?.canais || [])],
             filmes: [...(c.bloqueios?.filmes || [])],
             series: [...(c.bloqueios?.series || [])]
         };
+        // Já mostra o que está bloqueado na tela imediatamente!
+        atualizarBadgesVisuais();
         
         const boxListas = document.getElementById('box-listas-bloqueio');
         const btnCarregar = document.getElementById('btn-carregar-pastas');
@@ -488,7 +515,7 @@ function prepararEdicaoCliente(id) {
         if(boxListas) boxListas.style.display = 'none';
         if(btnCarregar) {
             btnCarregar.style.display = 'block';
-            btnCarregar.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
+            btnCarregar.innerHTML = '<i class="fa-solid fa-list-check"></i> Abrir Lista Completa do Servidor';
         }
 
         document.getElementById('modal-cliente').classList.add('open');
