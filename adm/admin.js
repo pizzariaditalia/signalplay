@@ -14,7 +14,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 let servidoresMap = {}; 
+let servidoresDadosGlobais = {}; // Guarda a url e senhas do painel Xtream
 let clientesGlobaisCache = []; 
+let bloqueiosGlobais = { canais: [], filmes: [], series: [] };
 
 document.addEventListener('DOMContentLoaded', () => { carregarServidores(true); });
 
@@ -95,7 +97,8 @@ function carregarServidores(initialLoad = false) {
         const tbody = document.getElementById('lista-servidores-body');
         const selectCliente = document.getElementById('cliente-servidor');
         
-        tbody.innerHTML = ''; selectCliente.innerHTML = '<option value="">-- Selecione um Servidor --</option>'; servidoresMap = {};
+        tbody.innerHTML = ''; selectCliente.innerHTML = '<option value="">-- Selecione um Servidor --</option>'; 
+        servidoresMap = {}; servidoresDadosGlobais = {};
 
         if (snapshot.empty) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding: 40px;">Nenhum servidor cadastrado.</td></tr>`;
@@ -103,6 +106,7 @@ function carregarServidores(initialLoad = false) {
             snapshot.forEach((doc) => {
                 const srv = doc.data(); const id = doc.id;
                 servidoresMap[id] = srv.nome; 
+                servidoresDadosGlobais[id] = srv; // Memória VIP para puxar as categorias
 
                 let badgeTipo = '';
                 if(srv.tipo === 'xtream') badgeTipo = '<span class="badge" style="background:#e67e22; color:#fff; border-color:#d35400;">Xtream</span>';
@@ -182,8 +186,106 @@ function abrirModalServidor() {
 
 function fecharModalServidor() { document.getElementById('modal-servidor').classList.remove('open'); }
 
+
 // ============================================================================
-// ⚙️ MÓDULO DE CLIENTES (COM CONTROLE DE TELAS E BLOQUEIOS)
+// 🔌 INTEGRAÇÃO COM API XTREAM CODES (Busca as pastas automaticamente)
+// ============================================================================
+async function carregarPastasDoServidorSelecionado() {
+    const servId = document.getElementById('cliente-servidor').value;
+    if (!servId) return alert("Por favor, selecione um Servidor da lista primeiro.");
+
+    const srv = servidoresDadosGlobais[servId];
+    if (!srv || srv.tipo !== 'xtream') {
+        return alert("A busca automática de pastas só é suportada em servidores do tipo Xtream Codes.");
+    }
+
+    const btn = document.getElementById('btn-carregar-pastas');
+    const loader = document.getElementById('loader-pastas');
+    const boxListas = document.getElementById('box-listas-bloqueio');
+
+    btn.style.display = 'none';
+    loader.style.display = 'block';
+    boxListas.style.display = 'none';
+
+    try {
+        const urlBase = srv.url.endsWith('/') ? srv.url.slice(0, -1) : srv.url;
+        
+        // Função interna para driblar bloqueios de CORS do navegador
+        const fetchCategoriaSeguro = async (action) => {
+            const targetUrl = `${urlBase}/player_api.php?username=${srv.xtream_user}&password=${srv.xtream_pass}&action=${action}`;
+            try {
+                let res = await fetch(targetUrl);
+                if (res.ok) return await res.json();
+            } catch(e) {}
+            
+            // Se der erro de CORS direto, usa o proxy de emergência AllOrigins
+            try {
+                let proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+                let resProxy = await fetch(proxyUrl);
+                let dataProxy = await resProxy.json();
+                return JSON.parse(dataProxy.contents);
+            } catch(e) {
+                return [];
+            }
+        };
+
+        const liveCats = await fetchCategoriaSeguro('get_live_categories');
+        const vodCats = await fetchCategoriaSeguro('get_vod_categories');
+        const seriesCats = await fetchCategoriaSeguro('get_series_categories');
+
+        renderizarCheckboxes('check-canais', liveCats, bloqueiosGlobais.canais || []);
+        renderizarCheckboxes('check-filmes', vodCats, bloqueiosGlobais.filmes || []);
+        renderizarCheckboxes('check-series', seriesCats, bloqueiosGlobais.series || []);
+
+        loader.style.display = 'none';
+        btn.style.display = 'block';
+        btn.innerHTML = '<i class="fa-solid fa-sync"></i> Recarregar Pastas do Servidor';
+        boxListas.style.display = 'flex';
+
+    } catch (error) {
+        loader.style.display = 'none';
+        btn.style.display = 'block';
+        alert("Não foi possível conectar ao servidor Xtream para puxar as pastas.");
+    }
+}
+
+function renderizarCheckboxes(containerId, categoriasArr, bloqueiosSalvos) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    
+    if (!categoriasArr || categoriasArr.length === 0) {
+        container.innerHTML = "<span style='color:var(--text-muted);font-size:0.85rem;'>Nenhuma pasta encontrada.</span>";
+        return;
+    }
+
+    // Organiza em ordem alfabética para facilitar a busca visual
+    categoriasArr.sort((a, b) => (a.category_name || "").localeCompare(b.category_name || ""));
+
+    let html = "";
+    categoriasArr.forEach(cat => {
+        const nomeStr = cat.category_name || "";
+        const isChecked = bloqueiosSalvos.some(b => b.toLowerCase() === nomeStr.toLowerCase()) ? "checked" : "";
+        
+        html += `
+            <label class="checkbox-item">
+                <input type="checkbox" value="${nomeStr.replace(/"/g, '&quot;')}" ${isChecked}>
+                ${nomeStr}
+            </label>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+function coletarBloqueiosCheckboxes(containerId) {
+    const container = document.getElementById(containerId);
+    if(!container) return [];
+    const checks = container.querySelectorAll('input[type="checkbox"]:checked');
+    return Array.from(checks).map(c => c.value);
+}
+
+
+// ============================================================================
+// ⚙️ MÓDULO DE CLIENTES
 // ============================================================================
 function carregarClientes() {
     db.collection("usuarios").orderBy("criadoEm", "desc").onSnapshot((snapshot) => {
@@ -217,7 +319,6 @@ function carregarClientes() {
                 
                 const nomeServidor = servidoresMap[c.servidor_id] || '<span style="color:var(--danger)">Sem Servidor</span>';
 
-                // Agora o botão de editar só passa o ID! A função busca o resto no cache.
                 tbody.innerHTML += `
                     <tr>
                         <td data-label="Usuário"><i class="fa-solid fa-user" style="color:var(--accent-yellow); margin-right:8px;"></i> <strong>${c.usuario}</strong></td>
@@ -247,10 +348,15 @@ async function salvarCliente() {
     const status = document.getElementById('cliente-status').value;
     const servidor_id = document.getElementById('cliente-servidor').value; 
     const vencimento = document.getElementById('cliente-vencimento').value;
-    
-    // Captura os novos campos de limites e bloqueios
     const telas = parseInt(document.getElementById('cliente-telas').value) || 1;
-    const bloqueios = document.getElementById('cliente-bloqueios').value.trim();
+
+    // Se o painel de pastas estiver visível, a gente coleta as caixinhas marcadas.
+    // Se não estiver (ex: você só foi mudar o vencimento), a gente não mexe, preservando as que já estavam salvas.
+    if (document.getElementById('box-listas-bloqueio').style.display !== 'none') {
+        bloqueiosGlobais.canais = coletarBloqueiosCheckboxes('check-canais');
+        bloqueiosGlobais.filmes = coletarBloqueiosCheckboxes('check-filmes');
+        bloqueiosGlobais.series = coletarBloqueiosCheckboxes('check-series');
+    }
 
     if(!usuario || !senha) return alert("Preencha Usuário e Senha.");
     if(!servidor_id) return alert("Por favor, selecione um Servidor para o cliente.");
@@ -261,17 +367,13 @@ async function salvarCliente() {
         status: status, 
         servidor_id: servidor_id, 
         vencimento: vencimento,
-        telas: telas,          // NOVO: Limite de telas
-        bloqueios: bloqueios   // NOVO: Pastas bloqueadas (Ex: "Adultos, BBB")
+        telas: telas,
+        bloqueios: bloqueiosGlobais 
     };
 
     try {
-        if (id) { 
-            await db.collection("usuarios").doc(id).update(dados); 
-        } else { 
-            dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); 
-            await db.collection("usuarios").add(dados); 
-        }
+        if (id) { await db.collection("usuarios").doc(id).update(dados); } 
+        else { dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp(); await db.collection("usuarios").add(dados); }
         fecharModalCliente();
     } catch (error) { 
         alert("Erro ao salvar cliente: " + error.message); 
@@ -293,15 +395,18 @@ function abrirModalCliente() {
     document.getElementById('cliente-status').value = "ativo";
     document.getElementById('cliente-servidor').value = ""; 
     document.getElementById('cliente-vencimento').value = "";
-    
-    // Reseta os novos campos
     document.getElementById('cliente-telas').value = 1;
-    document.getElementById('cliente-bloqueios').value = "";
+
+    bloqueiosGlobais = { canais: [], filmes: [], series: [] };
+    
+    // Reseta a interface das pastas
+    document.getElementById('box-listas-bloqueio').style.display = 'none';
+    document.getElementById('btn-carregar-pastas').style.display = 'block';
+    document.getElementById('btn-carregar-pastas').innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
 
     document.getElementById('modal-cliente').classList.add('open');
 }
 
-// Agora usamos o cache global para não precisar passar milhões de parâmetros no botão HTML
 function prepararEdicaoCliente(id) {
     const c = clientesGlobaisCache.find(cliente => cliente.id === id);
     if(!c) return alert("Erro ao buscar dados do cliente.");
@@ -313,14 +418,16 @@ function prepararEdicaoCliente(id) {
     document.getElementById('cliente-status').value = c.status;
     document.getElementById('cliente-servidor').value = c.servidor_id || ""; 
     document.getElementById('cliente-vencimento').value = c.vencimento || "";
-    
-    // Puxa os dados de bloqueio e telas (Se for cliente antigo, o padrão é 1 tela e 0 bloqueios)
     document.getElementById('cliente-telas').value = c.telas || 1;
-    document.getElementById('cliente-bloqueios').value = c.bloqueios || "";
+    
+    // Puxa as pastas bloqueadas e esconde a aba até ele clicar no botão
+    bloqueiosGlobais = c.bloqueios || { canais: [], filmes: [], series: [] };
+    
+    document.getElementById('box-listas-bloqueio').style.display = 'none';
+    document.getElementById('btn-carregar-pastas').style.display = 'block';
+    document.getElementById('btn-carregar-pastas').innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Carregar Pastas do Servidor';
 
     document.getElementById('modal-cliente').classList.add('open');
 }
 
-function fecharModalCliente() { 
-    document.getElementById('modal-cliente').classList.remove('open'); 
-}
+function fecharModalCliente() { document.getElementById('modal-cliente').classList.remove('open'); }
